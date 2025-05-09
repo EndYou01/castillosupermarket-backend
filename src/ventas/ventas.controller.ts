@@ -3,24 +3,24 @@ import {
   Get,
   InternalServerErrorException,
   Query,
-} from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 
-@Controller('ventas')
+@Controller("ventas")
 export class VentasController {
-  private readonly BASE_URL = 'https://api.loyverse.com/v1.0/receipts';
+  private readonly BASE_URL = "https://api.loyverse.com/v1.0/receipts";
   private readonly loyverseToken: string;
   private readonly store_id: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.loyverseToken = this.configService.get<string>('LOYVERSE_TOKEN');
-    this.store_id = this.configService.get<string>('STORE_ID');
+    this.loyverseToken = this.configService.get<string>("LOYVERSE_TOKEN");
+    this.store_id = this.configService.get<string>("STORE_ID");
   }
 
-  @Get('rango')
+  @Get("rango")
   async obtenerVentasPorRango(
-    @Query('desde') desde: string,
-    @Query('hasta') hasta: string,
+    @Query("desde") desde: string,
+    @Query("hasta") hasta: string
   ) {
     let allReceipts: any[] = [];
     let cursor: string | null = null;
@@ -31,11 +31,11 @@ export class VentasController {
           store_id: this.store_id,
           created_at_min: desde,
           created_at_max: hasta,
-          limit: '250',
+          limit: "250",
         });
 
         if (cursor) {
-          queryParams.set('cursor', cursor);
+          queryParams.set("cursor", cursor);
         }
 
         const url = `${this.BASE_URL}?${queryParams.toString()}`;
@@ -43,21 +43,21 @@ export class VentasController {
         const response = await fetch(url, {
           headers: {
             Authorization: `Bearer ${this.loyverseToken}`,
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
           },
         });
 
         if (response.status === 429) {
-          console.warn('🔁 Rate limit alcanzado. Esperando 60 segundos...');
+          console.warn("🔁 Rate limit alcanzado. Esperando 60 segundos...");
           await new Promise((r) => setTimeout(r, 60000));
           continue; // intenta otra vez
         }
 
         if (!response.ok) {
           const errorBody: any = await response.json();
-          console.error('❌ Error en respuesta de Loyverse:', errorBody);
+          console.error("❌ Error en respuesta de Loyverse:", errorBody);
           throw new InternalServerErrorException(
-            errorBody.errors?.[0]?.details || 'Error en la API de Loyverse',
+            errorBody.errors?.[0]?.details || "Error en la API de Loyverse"
           );
         }
 
@@ -78,9 +78,9 @@ export class VentasController {
 
       for (const recibo of allReceipts) {
         const factor =
-          recibo.receipt_type === 'SALE'
+          recibo.receipt_type === "SALE"
             ? 1
-            : recibo.receipt_type === 'REFUND'
+            : recibo.receipt_type === "REFUND"
               ? -1
               : 0;
 
@@ -103,6 +103,90 @@ export class VentasController {
       const ventaNeta = ventaBruta - reembolsos;
       const beneficioBruto = ventaNeta - costoTotal;
 
+      // Lógica de distribución
+      const calcularDistribucion = () => {
+        let kilos = 0;
+        const pagoImpuestosUnitario = 2100;
+
+        // Calcular días del rango
+        const fechaInicio = new Date(desde);
+        const fechaFin = new Date(hasta);
+        const dias = Math.ceil(
+          (fechaFin.getTime() - fechaInicio.getTime()) / (1000 * 60 * 60 * 24) +
+            1
+        ) - 1;
+        const pagoImpuestos = Math.ceil(pagoImpuestosUnitario * dias);
+
+        // Agrupar recibos por día
+        const recibosPorDia: Record<string, any[]> = {};
+
+        for (const recibo of allReceipts) {
+          const fecha = new Date(recibo.created_at).toISOString().split("T")[0]; // yyyy-mm-dd
+          if (!recibosPorDia[fecha]) {
+            recibosPorDia[fecha] = [];
+          }
+          recibosPorDia[fecha].push(recibo);
+        }
+
+        let pagoTrabajadoresTotal = 0;
+
+        for (const fecha in recibosPorDia) {
+          const recibosDelDia = recibosPorDia[fecha];
+
+          let ventaBrutaDia = 0;
+          let reembolsosDia = 0;
+
+          for (const recibo of recibosDelDia) {
+            const factor =
+              recibo.receipt_type === "SALE"
+                ? 1
+                : recibo.receipt_type === "REFUND"
+                  ? -1
+                  : 0;
+
+            const totalRecibo = recibo.total_money ?? 0;
+
+            if (factor === 1) {
+              ventaBrutaDia += totalRecibo;
+            } else if (factor === -1) {
+              reembolsosDia += totalRecibo;
+            }
+          }
+
+          const ventaNetaDia = ventaBrutaDia - reembolsosDia;
+          const salarioDia = Math.max(ventaNetaDia * 0.04, 2400);
+          pagoTrabajadoresTotal += salarioDia;
+        }
+
+        const gananciaNeta =
+          beneficioBruto - pagoTrabajadoresTotal - pagoImpuestos;
+
+        const calcularKilos = (valor: number, acumular = false) => {
+          const redondeado = Math.floor(valor / 10) * 10;
+          if (acumular) kilos += valor - redondeado;
+          return redondeado;
+        };
+
+        return {
+          gananciaNeta,
+          pagoTrabajadores: calcularKilos(pagoTrabajadoresTotal, true),
+          pagoImpuestos: calcularKilos(pagoImpuestos, true),
+          administradores: {
+            total: calcularKilos(gananciaNeta * 0.4),
+            alfonso: calcularKilos(gananciaNeta * 0.2, true),
+            jose: calcularKilos(gananciaNeta * 0.2, true),
+          },
+          inversores: {
+            total: calcularKilos(gananciaNeta * 0.55),
+            senjudo: calcularKilos(gananciaNeta * 0.2688, true),
+            adalberto: calcularKilos(gananciaNeta * 0.2811, true),
+          },
+          reinversion: gananciaNeta * 0.05 + kilos,
+        };
+      };
+
+      const distribucion = calcularDistribucion();
+
       return {
         ventaBruta,
         reembolsos,
@@ -110,11 +194,12 @@ export class VentasController {
         costoTotal,
         beneficioBruto,
         recibosProcesados: allReceipts.length,
+        distribucion,
       };
     } catch (error) {
-      console.error('🚨 Error al obtener ventas:', error);
+      console.error("🚨 Error al obtener ventas:", error);
       throw new InternalServerErrorException(
-        'No se pudo obtener la información de ventas',
+        "No se pudo obtener la información de ventas"
       );
     }
   }
