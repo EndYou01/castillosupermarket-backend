@@ -5,64 +5,78 @@ import {
   Query,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+
 @Controller('ventas')
 export class VentasController {
   private readonly BASE_URL = 'https://api.loyverse.com/v1.0/receipts';
-
   private readonly loyverseToken: string;
+  private readonly store_id: string;
 
   constructor(private readonly configService: ConfigService) {
     this.loyverseToken = this.configService.get<string>('LOYVERSE_TOKEN');
+    this.store_id = this.configService.get<string>('STORE_ID');
   }
+
   @Get('rango')
   async obtenerVentasPorRango(
-    @Query('store_id') storeId: string,
     @Query('desde') desde: string,
     @Query('hasta') hasta: string,
-    @Query('limite') limite = '200',
   ) {
-    if (!storeId || !desde || !hasta) {
-      throw new InternalServerErrorException(
-        'Faltan parámetros requeridos: store_id, desde o hasta',
-      );
-    }
-
-    const queryParams = new URLSearchParams({
-      store_id: storeId,
-      created_at_min: desde,
-      created_at_max: hasta,
-      limit: limite,
-    });
-
-    const url = `${this.BASE_URL}?${queryParams.toString()}`;
+    let allReceipts: any[] = [];
+    let cursor: string | null = null;
 
     try {
-      const response = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${this.loyverseToken}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      do {
+        const queryParams = new URLSearchParams({
+          store_id: this.store_id,
+          created_at_min: desde,
+          created_at_max: hasta,
+          limit: '250',
+        });
 
-      if (!response.ok) {
-        const errorBody = await response.json();
-        console.error('❌ Error en respuesta de Loyverse:', errorBody);
-        throw new InternalServerErrorException(
-          errorBody.errors?.[0]?.details || 'Error en la API de Loyverse',
-        );
-      }
+        if (cursor) {
+          queryParams.set('cursor', cursor);
+        }
 
-      const { receipts } = await response.json();
+        const url = `${this.BASE_URL}?${queryParams.toString()}`;
 
-      if (!Array.isArray(receipts)) {
-        throw new InternalServerErrorException('Formato de datos inválido');
-      }
+        const response = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${this.loyverseToken}`,
+            'Content-Type': 'application/json',
+          },
+        });
 
+        if (response.status === 429) {
+          console.warn('🔁 Rate limit alcanzado. Esperando 60 segundos...');
+          await new Promise((r) => setTimeout(r, 60000));
+          continue; // intenta otra vez
+        }
+
+        if (!response.ok) {
+          const errorBody: any = await response.json();
+          console.error('❌ Error en respuesta de Loyverse:', errorBody);
+          throw new InternalServerErrorException(
+            errorBody.errors?.[0]?.details || 'Error en la API de Loyverse',
+          );
+        }
+
+        const data: any = await response.json();
+        const receipts = data.receipts ?? [];
+        cursor = data.cursor ?? null;
+
+        allReceipts = allReceipts.concat(receipts);
+
+        // Espera 500ms para evitar bloqueo
+        await new Promise((r) => setTimeout(r, 500));
+      } while (cursor);
+
+      // Procesamiento de recibos
       let ventaBruta = 0;
       let reembolsos = 0;
       let costoTotal = 0;
 
-      for (const recibo of receipts) {
+      for (const recibo of allReceipts) {
         const factor =
           recibo.receipt_type === 'SALE'
             ? 1
@@ -95,7 +109,7 @@ export class VentasController {
         ventaNeta,
         costoTotal,
         beneficioBruto,
-        recibosProcesados: receipts.length,
+        recibosProcesados: allReceipts.length,
       };
     } catch (error) {
       console.error('🚨 Error al obtener ventas:', error);
