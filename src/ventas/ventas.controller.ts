@@ -5,6 +5,7 @@ import {
   Query,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { DateTime } from "luxon";
 
 @Controller("ventas")
 export class VentasController {
@@ -111,17 +112,21 @@ export class VentasController {
         // Calcular días del rango
         const fechaInicio = new Date(desde);
         const fechaFin = new Date(hasta);
-        const dias = Math.ceil(
-          (fechaFin.getTime() - fechaInicio.getTime()) / (1000 * 60 * 60 * 24) +
-            1
-        ) - 1;
+        const dias =
+          Math.ceil(
+            (fechaFin.getTime() - fechaInicio.getTime()) /
+              (1000 * 60 * 60 * 24) +
+              1
+          ) - 1;
         const pagoImpuestos = Math.ceil(pagoImpuestosUnitario * dias);
 
         // Agrupar recibos por día
         const recibosPorDia: Record<string, any[]> = {};
 
         for (const recibo of allReceipts) {
-          const fecha = new Date(recibo.created_at).toISOString().split("T")[0]; // yyyy-mm-dd
+          const fecha = DateTime.fromISO(recibo.created_at, { zone: "utc" })
+            .setZone("America/Havana")
+            .toFormat("yyyy-MM-dd");
           if (!recibosPorDia[fecha]) {
             recibosPorDia[fecha] = [];
           }
