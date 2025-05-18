@@ -7,7 +7,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { DateTime } from "luxon";
 import { IVentasResponse } from "src/interfaces/interfaces";
-
+import { gastosExtras } from "src/static/staticData";
 @Controller("ventas")
 export class VentasController {
   private readonly BASE_URL = "https://api.loyverse.com/v1.0/receipts";
@@ -164,8 +164,23 @@ export class VentasController {
           pagoTrabajadoresTotal += salarioDia;
         }
 
+        const diasProcesados = Object.keys(recibosPorDia).length;
+
+        let totalGastosExtras = 0;
+        const diasEvaluar = Array.from({ length: diasProcesados }, (_, i) =>
+          DateTime.fromISO(desde).plus({ days: i }).toFormat("yyyy-MM-dd")
+        );
+
+        for (const dia of diasEvaluar) {
+          const gasto = gastosExtras.find((g) => g.fecha === dia);
+          if (gasto) totalGastosExtras += gasto.amount;
+        }
+
         const gananciaNeta =
-          beneficioBruto - pagoTrabajadoresTotal - pagoImpuestos;
+          beneficioBruto -
+          pagoTrabajadoresTotal -
+          pagoImpuestos -
+          totalGastosExtras;
 
         const calcularKilos = (valor: number, acumular = false) => {
           const redondeado = Math.floor(valor / 10) * 10;
@@ -173,13 +188,12 @@ export class VentasController {
           return redondeado;
         };
 
-        const diasProcesados = Object.keys(recibosPorDia).length;
-
         return {
           diasProcesados,
           gananciaNeta,
           pagoTrabajadores: calcularKilos(pagoTrabajadoresTotal, true),
           pagoImpuestos: calcularKilos(pagoImpuestos, true),
+          gastosExtras: calcularKilos(totalGastosExtras, true),
           administradores: {
             total: calcularKilos(gananciaNeta * 0.4),
             alfonso: calcularKilos(gananciaNeta * 0.2, true),

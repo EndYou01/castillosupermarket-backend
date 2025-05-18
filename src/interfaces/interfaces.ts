@@ -6,6 +6,7 @@ export interface IVentasResponse {
   beneficioBruto: number;
   recibosProcesados: number;
   distribucion: {
+    gastosExtras: number;
     diasProcesados: number;
     gananciaNeta: number;
     pagoTrabajadores: number;
@@ -22,4 +23,9 @@ export interface IVentasResponse {
     };
     reinversion: number;
   };
+}
+
+export interface IGastosExtras {
+  fecha: string;
+  amount: number;
 }
