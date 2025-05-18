@@ -7,7 +7,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { DateTime } from "luxon";
 import { IVentasResponse } from "src/interfaces/interfaces";
-import { gastosExtras } from "src/static/staticData";
+import { gastosExtras } from '../static/staticData';
 @Controller("ventas")
 export class VentasController {
   private readonly BASE_URL = "https://api.loyverse.com/v1.0/receipts";
