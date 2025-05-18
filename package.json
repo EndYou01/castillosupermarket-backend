@@ -23,6 +23,7 @@
     "@nestjs/common": "^10.0.0",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^10.0.0",
+    "@nestjs/mapped-types": "*",
     "@nestjs/platform-express": "^10.0.0",
     "luxon": "^3.6.1",
     "node-fetch": "^3.3.2",

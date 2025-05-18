@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { DateTime } from "luxon";
+import { IVentasResponse } from "src/interfaces/interfaces";
 
 @Controller("ventas")
 export class VentasController {
@@ -22,7 +23,7 @@ export class VentasController {
   async obtenerVentasPorRango(
     @Query("desde") desde: string,
     @Query("hasta") hasta: string
-  ) {
+  ): Promise<IVentasResponse> {
     let allReceipts: any[] = [];
     let cursor: string | null = null;
 
@@ -172,7 +173,10 @@ export class VentasController {
           return redondeado;
         };
 
+        const diasProcesados = Object.keys(recibosPorDia).length;
+
         return {
+          diasProcesados,
           gananciaNeta,
           pagoTrabajadores: calcularKilos(pagoTrabajadoresTotal, true),
           pagoImpuestos: calcularKilos(pagoImpuestos, true),
