@@ -37,6 +37,7 @@ export class ProductosController {
       const data: IProductResponse = await response.json();
 
       return data.items.map((item) => ({
+        id: item.id,
         item_name: item.item_name,
         price: item.variants[0]?.default_price || 0,
         category_id: item.category_id,
