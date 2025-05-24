@@ -38,6 +38,7 @@ export class ProductosController {
 
       return data.items.map((item) => ({
         id: item.id,
+        description: item.description,
         item_name: item.item_name,
         price: item.variants[0]?.default_price || 0,
         category_id: item.category_id,
