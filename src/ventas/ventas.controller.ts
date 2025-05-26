@@ -3,11 +3,13 @@ import {
   Get,
   InternalServerErrorException,
   Query,
+  UseGuards,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { DateTime } from "luxon";
 import { IVentasResponse } from "src/interfaces/interfaces";
 import { gastosExtras } from '../static/staticData';
+import { JwtAuthGuard } from "src/auth/jwt.guard";
 @Controller("ventas")
 export class VentasController {
   private readonly BASE_URL = "https://api.loyverse.com/v1.0/receipts";
@@ -19,6 +21,7 @@ export class VentasController {
     this.store_id = this.configService.get<string>("STORE_ID");
   }
 
+  // @UseGuards(JwtAuthGuard)
   @Get("rango")
   async obtenerVentasPorRango(
     @Query("desde") desde: string,
