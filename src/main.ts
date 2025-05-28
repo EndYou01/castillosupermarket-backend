@@ -8,6 +8,7 @@ async function bootstrap() {
   const allowedOrigins = [
     'http://localhost:5173',
     'https://castillosupermarket-admin.vercel.app',
+    'https://castillosupermarket-store.vercel.app'
   ];
 
   app.enableCors({
