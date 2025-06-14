@@ -43,10 +43,10 @@ export interface IProduct {
   sold_by_weight: boolean;
   is_composite: boolean;
   use_production: boolean;
-  category_id: null;
+  category_id: number | null;
   components: any[];
-  primary_supplier_id: null;
-  tax_ids: any[];
+  primary_supplier_id: number | null;
+  tax_ids: number[];
   modifier_ids: any[];
   form: string;
   color: string;
@@ -89,7 +89,7 @@ export interface Store {
 }
 
 export interface ICategoryResponse {
-  categories: ICategory[]
+  categories: ICategory[];
 }
 export interface ICategory {
   id: string;
@@ -97,4 +97,13 @@ export interface ICategory {
   color: string;
   created_at: Date;
   deleted_at: Date | null;
+}
+
+export interface IInventoryResponse {
+  inventory_levels: {
+    variant_id: string;
+    store_id: string;
+    in_stock: number;
+    updated_at: Date;
+  }[];
 }
