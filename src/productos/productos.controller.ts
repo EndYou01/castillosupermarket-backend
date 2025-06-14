@@ -50,4 +50,49 @@ export class ProductosController {
       );
     }
   }
+  @Get('inventario')
+  async obtenerInventario() {
+    try {
+      const url = `${this.BASE_URL}/items?limit=250`;
+
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${this.loyverseToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const errorBody: any = await response.json();
+        throw new InternalServerErrorException(
+          errorBody.errors?.[0]?.details || "Error en la API de Loyverse"
+        );
+      }
+
+      const data: IProductResponse = await response.json();
+
+      console.log(data.items)
+
+      data.items.map((item) => ({
+        id: item.id,
+        description: item.description,
+        item_name: item.item_name,
+        price: item.variants[0]?.default_price || 0,
+        category_id: item.category_id,
+        image_url: item.image_url,
+      }));
+
+      return {
+        cantidadProductos: data.items.length,
+        totalInvertido: 0
+      }
+    } catch (error) {
+      throw new InternalServerErrorException(
+        "No se pudo obtener la información de productos"
+      );
+    }
+  }
+
+
+
 }
