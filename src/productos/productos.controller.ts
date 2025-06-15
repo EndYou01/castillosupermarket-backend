@@ -1,6 +1,10 @@
 import { Controller, Get, InternalServerErrorException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import {  IInventoryResponse, IProduct, IProductResponse } from "src/interfaces/interfaces";
+import {
+  IInventoryResponse,
+  IProduct,
+  IProductResponse,
+} from "src/interfaces/interfaces";
 
 @Controller("productos")
 export class ProductosController {
@@ -80,40 +84,23 @@ export class ProductosController {
       if (!inventoryResponse.ok) {
         const errorBody: any = await inventoryResponse.json();
         throw new InternalServerErrorException(
-          errorBody.errors?.[0]?.details || "Error al obtener inventario de Loyverse"
+          errorBody.errors?.[0]?.details ||
+            "Error al obtener inventario de Loyverse"
         );
       }
 
       const inventoryData: IInventoryResponse = await inventoryResponse.json();
 
       // Filtrar productos que rastrean stock
-      const productosConStock = productsData.items.filter((prod) => prod.track_stock);
+      const productosConStock = productsData.items.filter(
+        (prod) => prod.track_stock
+      );
 
       // Crear un mapa de inventario por variant_id para acceso rápido
       const inventoryMap = new Map<string, any>();
-      
-      // Manejar diferentes estructuras de respuesta de la API
-      let inventoryItems = [];
-      if (inventoryData && Array.isArray(inventoryData.inventory_levels)) {
-        inventoryItems = inventoryData.inventory_levels;
-      } else if (inventoryData && Array.isArray(inventoryData)) {
-        inventoryItems = inventoryData;
-      } else if (inventoryData && inventoryData.inventory_levels && Array.isArray(inventoryData.inventory_levels)) {
-        inventoryItems = inventoryData.inventory_levels;
-      } else {
-        console.warn("No se encontró estructura de inventario válida:", inventoryData);
-        inventoryItems = [];
-      }
-
-      inventoryItems.forEach(item => {
-        if (item && item.variant_id) {
-          inventoryMap.set(item.variant_id, item);
-        }
-      });
 
       // Combinar productos con sus cantidades de inventario
-      const productosConInventario = productosConStock.map(producto => {
-        
+      const productosConInventario = productosConStock.map((producto) => {
         const variant = producto.variants?.[0]; // Verificar que variants existe
         if (!variant) {
           console.warn(`Producto ${producto.item_name} no tiene variantes`);
@@ -134,17 +121,21 @@ export class ProductosController {
           item_name: producto.item_name,
           description: producto.description,
           cost: variant.cost || 0,
-          quantity: inventoryData.inventory_levels.find(item => item.variant_id === producto.variants[0].variant_id).in_stock,
+          quantity: inventoryData.inventory_levels.find(
+            (item) => item.variant_id === producto.variants[0].variant_id
+          ).in_stock,
           variant_id: variant.item_id,
           inventory_found: !!inventoryItem, // Para debug
         };
       });
 
       // Calcular totales solo con productos que tienen variants válidas
-      const productosValidos = productosConInventario.filter(p => p.variant_id !== null);
-      
+      const productosValidos = productosConInventario.filter(
+        (p) => p.variant_id !== null
+      );
+
       const totalInvertido = productosValidos.reduce(
-        (sum, item) => sum + (item.cost * item.quantity),
+        (sum, item) => sum + item.cost * item.quantity,
         0
       );
 
@@ -158,11 +149,7 @@ export class ProductosController {
         cantidadTotalEnInventario: cantidadTotalProductos,
         totalInvertido: totalInvertido,
         productosConInventario: productosConInventario,
-        debug: {
-          inventoryItemsFound: inventoryItems.length,
-          productosConStockCount: productosConStock.length,
-          productosValidosCount: productosValidos.length,
-        }
+        productosValidosCount: productosValidos.length,
       };
     } catch (error) {
       console.error("Error al obtener inventario:", error);
