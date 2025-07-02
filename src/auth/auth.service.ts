@@ -10,6 +10,28 @@ export class AuthService {
     private readonly jwtService: JwtService
   ) { }
 
+  // Método para probar la conexión a la base de datos
+  async testConnection() {
+    try {
+      const count = await this.usersService.getUserCount();
+      console.log('✅ Conexión exitosa - Usuarios en DB:', count);
+      return {
+        success: true,
+        message: 'Conexión a base de datos exitosa',
+        userCount: count,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('❌ Error de conexión:', error);
+      return {
+        success: false,
+        message: 'Error de conexión a base de datos',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
   async validateUser(username: string, pass: string): Promise<any> {
     const user = await this.usersService.findByUsername(username);
     if (user && await bcrypt.compare(pass, user.password)) {
@@ -20,16 +42,6 @@ export class AuthService {
   }
 
   async login(username: string, password: string) {
-    // const user = await this.validateUser(username, password);
-    // if (!user) {
-    //   throw new UnauthorizedException('Credenciales incorrectas');
-    // }
-
-    // const payload = { username: user.username, sub: user.id };
-    // return {
-    //   access_token: this.jwtService.sign(payload),
-    // };
-
     const user = await this.validateUser(username, password);
     if (!user) throw new UnauthorizedException();
 
@@ -65,5 +77,4 @@ export class AuthService {
       throw new UnauthorizedException('Token no válido o expirado');
     }
   }
-
 }

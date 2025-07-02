@@ -108,7 +108,7 @@ export class VentasController {
       // Lógica de distribución
       const calcularDistribucion = () => {
         let kilos = 0;
-        const pagoImpuestosUnitario = 2100;
+        const pagoImpuestosUnitario = 1500;
 
         // Calcular días del rango
         const fechaInicio = new Date(desde);

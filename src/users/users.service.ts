@@ -8,24 +8,29 @@ import * as bcrypt from 'bcrypt';
 export class UsersService {
   constructor(
     @InjectRepository(User)
-    private readonly userRepo: Repository<User>,
-  ) {}
+    private readonly userRepository: Repository<User>,
+  ) { }
+
+  // Método para contar usuarios (para test de conexión)
+  async getUserCount(): Promise<number> {
+    return await this.userRepository.count();
+  }
 
   async findByUsername(username: string) {
-    return this.userRepo.findOne({ where: { username } });
+    return this.userRepository.findOne({ where: { username } });
   }
 
   async findById(id: number) {
-    return this.userRepo.findOne({ where: { id } });
+    return this.userRepository.findOne({ where: { id } });
   }
 
   async create(username: string, password: string) {
     const hashed = await bcrypt.hash(password, 10);
-    const user = this.userRepo.create({ username, password: hashed });
-    return this.userRepo.save(user);
+    const user = this.userRepository.create({ username, password: hashed });
+    return this.userRepository.save(user);
   }
 
   async updateRefreshToken(userId: number, token: string | null) {
-    await this.userRepo.update(userId, { refreshToken: token });
+    await this.userRepository.update(userId, { refreshToken: token });
   }
 }
