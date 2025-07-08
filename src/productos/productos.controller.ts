@@ -20,30 +20,72 @@ export class ProductosController {
   @Get()
   async obtenerProductos() {
     try {
-      const url = `${this.BASE_URL}/items?limit=250`;
-      const response = await fetch(url, {
+      // Obtener productos
+      const productsUrl = `${this.BASE_URL}/items?limit=250`;
+      const productsResponse = await fetch(productsUrl, {
         headers: {
           Authorization: `Bearer ${this.loyverseToken}`,
           "Content-Type": "application/json",
         },
       });
 
-      if (!response.ok) {
-        const errorBody: any = await response.json();
+      if (!productsResponse.ok) {
+        const errorBody: any = await productsResponse.json();
         throw new InternalServerErrorException(
           errorBody.errors?.[0]?.details || "Error en la API de Loyverse"
         );
       }
 
-      const data: IProductResponse = await response.json();
-      return data.items.map((item) => ({
-        id: item.id,
-        description: item.description,
-        item_name: item.item_name,
-        price: item.variants[0]?.default_price || 0,
-        category_id: item.category_id,
-        image_url: item.image_url,
-      }));
+      const productsData: IProductResponse = await productsResponse.json();
+
+      // Obtener inventario para las cantidades
+      const inventoryUrl = `${this.BASE_URL}/inventory?store_id=${this.storeId}&limit=250`;
+      const inventoryResponse = await fetch(inventoryUrl, {
+        headers: {
+          Authorization: `Bearer ${this.loyverseToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!inventoryResponse.ok) {
+        const errorBody: any = await inventoryResponse.json();
+        throw new InternalServerErrorException(
+          errorBody.errors?.[0]?.details ||
+            "Error al obtener inventario de Loyverse"
+        );
+      }
+
+      const inventoryData: IInventoryResponse = await inventoryResponse.json();
+
+      // Mapear productos con sus cantidades de inventario
+      const productosConInventario = productsData.items.map((item) => {
+        const variant = item.variants?.[0];
+        let quantity = 0;
+
+        // Si el producto rastrea stock y tiene variantes, buscar la cantidad en inventario
+        if (item.track_stock && variant) {
+          const inventoryItem = inventoryData.inventory_levels.find(
+            (invItem) => invItem.variant_id === variant.variant_id
+          );
+          quantity = inventoryItem?.in_stock || 0;
+        }
+
+        return {
+          id: item.id,
+          description: item.description,
+          item_name: item.item_name,
+          price: variant?.default_price || 0,
+          category_id: item.category_id,
+          image_url: item.image_url,
+          quantity: quantity,
+          track_stock: item.track_stock, // Incluir información de si rastrea stock
+        };
+      });
+
+      // Filtrar solo productos que rastreen stock y tengan cantidad mayor a 0
+      return productosConInventario.filter(
+        (producto) => producto.track_stock && producto.quantity > 0
+      );
     } catch (error) {
       throw new InternalServerErrorException(
         "No se pudo obtener la información de productos"
@@ -96,12 +138,9 @@ export class ProductosController {
         (prod) => prod.track_stock
       );
 
-      // Crear un mapa de inventario por variant_id para acceso rápido
-      const inventoryMap = new Map<string, any>();
-
       // Combinar productos con sus cantidades de inventario
       const productosConInventario = productosConStock.map((producto) => {
-        const variant = producto.variants?.[0]; // Verificar que variants existe
+        const variant = producto.variants?.[0];
         if (!variant) {
           console.warn(`Producto ${producto.item_name} no tiene variantes`);
           return {
@@ -114,17 +153,18 @@ export class ProductosController {
           };
         }
 
-        const inventoryItem = inventoryMap.get(variant.item_id);
+        // Buscar la cantidad en inventario usando variant_id
+        const inventoryItem = inventoryData.inventory_levels.find(
+          (item) => item.variant_id === variant.variant_id
+        );
 
         return {
           id: producto.id,
           item_name: producto.item_name,
           description: producto.description,
           cost: variant.cost || 0,
-          quantity: inventoryData.inventory_levels.find(
-            (item) => item.variant_id === producto.variants[0].variant_id
-          ).in_stock,
-          variant_id: variant.item_id,
+          quantity: inventoryItem?.in_stock || 0,
+          variant_id: variant.variant_id,
           inventory_found: !!inventoryItem, // Para debug
         };
       });
