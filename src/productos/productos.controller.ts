@@ -82,9 +82,9 @@ export class ProductosController {
         };
       });
 
-      // Filtrar solo productos que rastreen stock y tengan cantidad mayor a 0
+      // Filtrar solo productos que rastreen stock y tengan cantidad mayor a 0 y productos con precios mayores a 0
       return productosConInventario.filter(
-        (producto) => producto.track_stock && producto.quantity > 0
+        (producto) => producto.track_stock && producto.quantity > 0 && producto.price > 0
       );
     } catch (error) {
       throw new InternalServerErrorException(
