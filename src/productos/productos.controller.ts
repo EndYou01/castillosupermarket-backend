@@ -37,7 +37,6 @@ export class ProductosController {
       }
 
       const productsData: IProductResponse = await productsResponse.json();
-      console.log(productsData.items.find(prod => prod.item_name === "Milka"));
       
 
       // Obtener inventario para las cantidades
@@ -61,13 +60,6 @@ export class ProductosController {
 
       // Mapear productos con sus cantidades de inventario
       const productosConInventario = productsData.items.map((item) => {
-
-        if(item.item_name === "Milka"){
-          console.log(item.variants[0]);
-          console.log(item.variants[0].stores);
-
-        }
-        
 
         const variant = item.variants?.[0];
         let quantity = 0;
