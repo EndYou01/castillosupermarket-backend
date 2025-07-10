@@ -37,6 +37,8 @@ export class ProductosController {
       }
 
       const productsData: IProductResponse = await productsResponse.json();
+      console.log(productsData.items.find(prod => prod.item_name === "Milka"));
+      
 
       // Obtener inventario para las cantidades
       const inventoryUrl = `${this.BASE_URL}/inventory?store_id=${this.storeId}&limit=250`;
@@ -59,6 +61,14 @@ export class ProductosController {
 
       // Mapear productos con sus cantidades de inventario
       const productosConInventario = productsData.items.map((item) => {
+
+        if(item.item_name === "Milka"){
+          console.log(item.variants[0]);
+          console.log(item.variants[0].stores);
+
+        }
+        
+
         const variant = item.variants?.[0];
         let quantity = 0;
 
@@ -74,7 +84,7 @@ export class ProductosController {
           id: item.id,
           description: item.description,
           item_name: item.item_name,
-          price: variant?.default_price || 0,
+          price: variant?.stores.find(store => store.store_id === this.storeId).price || 0,
           category_id: item.category_id,
           image_url: item.image_url,
           quantity: quantity,
