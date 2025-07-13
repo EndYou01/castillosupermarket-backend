@@ -6,8 +6,9 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { DateTime } from "luxon";
-import { IVentasResponse } from "src/interfaces/interfaces";
+import { IReceipt, IVentasResponse } from "src/interfaces/interfaces";
 import { gastosExtras } from '../static/staticData';
+
 @Controller("ventas")
 export class VentasController {
   private readonly BASE_URL = "https://api.loyverse.com/v1.0/receipts";
@@ -24,7 +25,7 @@ export class VentasController {
     @Query("desde") desde: string,
     @Query("hasta") hasta: string
   ): Promise<IVentasResponse> {
-    let allReceipts: any[] = [];
+    let allReceipts: IReceipt[] = [];
     let cursor: string | null = null;
 
     try {
@@ -78,7 +79,11 @@ export class VentasController {
       let reembolsos = 0;
       let costoTotal = 0;
 
+      // Nuevo procesamiento de métodos de pago
+      const metodosPagoMap = new Map<string, number>();
+
       for (const recibo of allReceipts) {
+        
         const factor =
           recibo.receipt_type === "SALE"
             ? 1
@@ -88,6 +93,7 @@ export class VentasController {
 
         const totalRecibo = recibo.total_money ?? 0;
         const lineItems = recibo.line_items ?? [];
+        const payments = recibo.payments ?? [];
 
         if (factor === 1) {
           ventaBruta += totalRecibo;
@@ -100,10 +106,29 @@ export class VentasController {
           const quantity = item.quantity ?? 0;
           costoTotal += factor * cost * quantity;
         }
+
+        // Procesar métodos de pago
+        for (const payment of payments) {
+          const paymentName = payment.name ?? "Sin nombre";
+          const paymentAmount = (payment.money_amount ?? 0) * factor;
+          
+          if (metodosPagoMap.has(paymentName)) {
+            metodosPagoMap.set(paymentName, metodosPagoMap.get(paymentName)! + paymentAmount);
+          } else {
+            metodosPagoMap.set(paymentName, paymentAmount);
+          }
+        }
       }
 
       const ventaNeta = ventaBruta - reembolsos;
       const beneficioBruto = ventaNeta - costoTotal;
+
+      // Convertir Map a array para métodos de pago
+      const metodos_pago = Array.from(metodosPagoMap.entries()).map(([name, money_amount]) => ({
+        name,
+        money_amount,
+        descuento: name === "Tarjeta Fiscal" ? Math.round(money_amount * 0.06) : 0
+      }));
 
       // Lógica de distribución
       const calcularDistribucion = () => {
@@ -218,6 +243,7 @@ export class VentasController {
         beneficioBruto,
         recibosProcesados: allReceipts.length,
         distribucion,
+        metodos_pago,
       };
     } catch (error) {
       console.error("🚨 Error al obtener ventas:", error);
