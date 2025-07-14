@@ -83,7 +83,7 @@ export class VentasController {
       const metodosPagoMap = new Map<string, number>();
 
       for (const recibo of allReceipts) {
-        
+
         const factor =
           recibo.receipt_type === "SALE"
             ? 1
@@ -111,7 +111,7 @@ export class VentasController {
         for (const payment of payments) {
           const paymentName = payment.name ?? "Sin nombre";
           const paymentAmount = (payment.money_amount ?? 0) * factor;
-          
+
           if (metodosPagoMap.has(paymentName)) {
             metodosPagoMap.set(paymentName, metodosPagoMap.get(paymentName)! + paymentAmount);
           } else {
@@ -135,15 +135,10 @@ export class VentasController {
         let kilos = 0;
         const pagoImpuestosUnitario = 2100;
 
-        // Calcular días del rango
-        const fechaInicio = new Date(desde);
-        const fechaFin = new Date(hasta);
-        const dias =
-          Math.ceil(
-            (fechaFin.getTime() - fechaInicio.getTime()) /
-              (1000 * 60 * 60 * 24) +
-              1
-          ) - 1;
+        // Calcular días del rango usando Luxon consistentemente
+        const fechaInicio = DateTime.fromISO(desde, { zone: "America/Havana" }).startOf('day');
+        const fechaFin = DateTime.fromISO(hasta, { zone: "America/Havana" }).endOf('day');
+        const dias = Math.floor(fechaFin.diff(fechaInicio, 'days').days) + 1;
         const pagoImpuestos = Math.ceil(pagoImpuestosUnitario * dias);
 
         // Agrupar recibos por día
@@ -192,8 +187,9 @@ export class VentasController {
         const diasProcesados = Object.keys(recibosPorDia).length;
 
         let totalGastosExtras = 0;
-        const diasEvaluar = Array.from({ length: diasProcesados }, (_, i) =>
-          DateTime.fromISO(desde).plus({ days: i }).toFormat("yyyy-MM-dd")
+        // Usar el mismo cálculo de días para gastos extras
+        const diasEvaluar = Array.from({ length: dias }, (_, i) =>
+          fechaInicio.plus({ days: i }).toFormat("yyyy-MM-dd")
         );
 
         for (const dia of diasEvaluar) {
@@ -208,8 +204,15 @@ export class VentasController {
           totalGastosExtras;
 
         const calcularKilos = (valor: number, acumular = false) => {
-          const redondeado = Math.floor(valor / 10) * 10;
-          if (acumular) kilos += valor - redondeado;
+          let redondeado = Math.floor(valor / 10) * 10;
+          if (acumular) {
+            kilos += valor - redondeado;
+            // Asegurar que los residuales no superen $10
+            if (kilos >= 10) {
+              redondeado += 10;
+              kilos -= 10;
+            }
+          }
           return redondeado;
         };
 
