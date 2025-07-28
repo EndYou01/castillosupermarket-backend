@@ -173,7 +173,7 @@ export class ProductosController {
 
       // Calcular totales solo con productos que tienen variants válidas
       const productosValidos = productosConInventario.filter(
-        (p) => p.variant_id !== null
+        (p) => p.quantity > 0
       );
 
       const totalInvertido = productosValidos.reduce(
