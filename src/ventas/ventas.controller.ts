@@ -224,8 +224,9 @@ export class VentasController {
           gastosExtras: calcularKilos(totalGastosExtras, true),
           administradores: {
             total: calcularKilos(gananciaNeta * 0.4),
-            alfonso: calcularKilos(gananciaNeta * 0.2, true),
-            jose: calcularKilos(gananciaNeta * 0.2, true),
+            alfonso: calcularKilos(gananciaNeta * 0.125, true),
+            jose: calcularKilos(gananciaNeta * 0.125, true),
+            carlos: calcularKilos(gananciaNeta * 0.15, true),
           },
           inversores: {
             total: calcularKilos(gananciaNeta * 0.55),
