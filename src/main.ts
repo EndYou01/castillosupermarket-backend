@@ -25,7 +25,7 @@ async function bootstrap() {
     optionsSuccessStatus: 200, // algunos navegadores viejos usan 204
   });
 
-  console.log(process.env.PORT || 3000);
+  console.log(`backend running in port: ${process.env.PORT || 3000}`);
   
 
   await app.listen(process.env.PORT || 3000);
