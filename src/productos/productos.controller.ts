@@ -37,7 +37,7 @@ export class ProductosController {
       }
 
       const productsData: IProductResponse = await productsResponse.json();
-      
+
 
       // Obtener inventario para las cantidades
       const inventoryUrl = `${this.BASE_URL}/inventory?store_id=${this.storeId}&limit=250`;
@@ -52,7 +52,7 @@ export class ProductosController {
         const errorBody: any = await inventoryResponse.json();
         throw new InternalServerErrorException(
           errorBody.errors?.[0]?.details ||
-            "Error al obtener inventario de Loyverse"
+          "Error al obtener inventario de Loyverse"
         );
       }
 
@@ -129,11 +129,16 @@ export class ProductosController {
         const errorBody: any = await inventoryResponse.json();
         throw new InternalServerErrorException(
           errorBody.errors?.[0]?.details ||
-            "Error al obtener inventario de Loyverse"
+          "Error al obtener inventario de Loyverse"
         );
-      }
+      } 
 
       const inventoryData: IInventoryResponse = await inventoryResponse.json();
+
+      // FILTRAR solo el inventario de la tienda correcta
+      const inventarioTiendaActual = inventoryData.inventory_levels.filter(
+        (item) => item.store_id === this.storeId
+      );
 
       // Filtrar productos que rastrean stock
       const productosConStock = productsData.items.filter(
@@ -155,8 +160,8 @@ export class ProductosController {
           };
         }
 
-        // Buscar la cantidad en inventario usando variant_id
-        const inventoryItem = inventoryData.inventory_levels.find(
+        // Buscar la cantidad en inventario usando variant_id en el inventario filtrado
+        const inventoryItem = inventarioTiendaActual.find(
           (item) => item.variant_id === variant.variant_id
         );
 
