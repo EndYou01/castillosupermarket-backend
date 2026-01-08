@@ -133,7 +133,7 @@ export class VentasController {
       // Lógica de distribución
       const calcularDistribucion = () => {
         let kilos = 0;
-        const pagoImpuestosUnitario = 2100;
+        const pagoImpuestosUnitario = 4000;
 
         // Calcular días del rango usando Luxon consistentemente
         const fechaInicio = DateTime.fromISO(desde, { zone: "America/Havana" }).startOf('day');
