@@ -216,7 +216,7 @@ export class VentasController {
           return redondeado;
         };
 
-        const alfonsoJose = calcularKilos(gananciaNeta * 0.15, true);
+        const alfonsoJose = calcularKilos(gananciaNeta * 0.1805, true);
 
         return {
           diasProcesados,
@@ -225,14 +225,14 @@ export class VentasController {
           pagoImpuestos: calcularKilos(pagoImpuestos, true),
           gastosExtras: calcularKilos(totalGastosExtras, true),
           administradores: {
-            total: calcularKilos(gananciaNeta * 0.45),
+            total: calcularKilos(gananciaNeta * 0.511),
             alfonso: alfonsoJose,
             jose: alfonsoJose,
             carlos: calcularKilos(gananciaNeta * 0.15, true),
           },
           inversores: {
-            total: calcularKilos(gananciaNeta * 0.50),
-            senjudo: calcularKilos(gananciaNeta * 0.2418, true),
+            total: calcularKilos(gananciaNeta * 0.4366),
+            senjudo: calcularKilos(gananciaNeta * 0.1805, true),
             adalberto: calcularKilos(gananciaNeta * 0.2561, true),
           },
           reinversion: gananciaNeta * 0.05 + kilos,
