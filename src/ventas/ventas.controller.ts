@@ -179,8 +179,7 @@ export class VentasController {
             }
           }
 
-          const ventaNetaDia = ventaBrutaDia - reembolsosDia;
-          const salarioDia = Math.max(ventaNetaDia * 0.04, 2400);
+          const salarioDia = 3000;
           pagoTrabajadoresTotal += salarioDia;
         }
 
