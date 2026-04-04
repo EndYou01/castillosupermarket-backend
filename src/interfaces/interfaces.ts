@@ -11,17 +11,14 @@ export interface IVentasResponse {
     gananciaNeta: number;
     pagoTrabajadores: number;
     pagoImpuestos: number;
-    administradores: {
+    reinversion: number;
+    jefes: {
       total: number;
       alfonso: number;
-      jose: number;
-    };
-    inversores: {
-      total: number;
       senjudo: number;
-      adalberto: number;
+      josse: number;
+      julio: number;
     };
-    reinversion: number;
   };
   metodos_pago: IMetodoPago[];
 }

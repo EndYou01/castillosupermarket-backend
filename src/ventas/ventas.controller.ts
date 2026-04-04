@@ -132,61 +132,31 @@ export class VentasController {
 
       // Lógica de distribución
       const calcularDistribucion = () => {
-        let kilos = 0;
-        const pagoImpuestosUnitario = 4000;
+        const pagoImpuestosUnitario = 2000;
+        const salarioDia = 2000;
+        const reinversionDiaria = 1500;
 
         // Calcular días del rango usando Luxon consistentemente
         const fechaInicio = DateTime.fromISO(desde, { zone: "America/Havana" }).startOf('day');
         const fechaFin = DateTime.fromISO(hasta, { zone: "America/Havana" }).endOf('day');
         const dias = Math.floor(fechaFin.diff(fechaInicio, 'days').days) + 1;
-        const pagoImpuestos = Math.ceil(pagoImpuestosUnitario * dias);
+        const pagoImpuestos = pagoImpuestosUnitario * dias;
+        const reinversion = reinversionDiaria * dias;
 
-        // Agrupar recibos por día
-        const recibosPorDia: Record<string, any[]> = {};
+        // Agrupar recibos por día para contar días procesados
+        const recibosPorDia = new Set<string>();
 
         for (const recibo of allReceipts) {
           const fecha = DateTime.fromISO(recibo.created_at, { zone: "utc" })
             .setZone("America/Havana")
             .toFormat("yyyy-MM-dd");
-          if (!recibosPorDia[fecha]) {
-            recibosPorDia[fecha] = [];
-          }
-          recibosPorDia[fecha].push(recibo);
+          recibosPorDia.add(fecha);
         }
 
-        let pagoTrabajadoresTotal = 0;
-
-        for (const fecha in recibosPorDia) {
-          const recibosDelDia = recibosPorDia[fecha];
-
-          let ventaBrutaDia = 0;
-          let reembolsosDia = 0;
-
-          for (const recibo of recibosDelDia) {
-            const factor =
-              recibo.receipt_type === "SALE"
-                ? 1
-                : recibo.receipt_type === "REFUND"
-                  ? -1
-                  : 0;
-
-            const totalRecibo = recibo.total_money ?? 0;
-
-            if (factor === 1) {
-              ventaBrutaDia += totalRecibo;
-            } else if (factor === -1) {
-              reembolsosDia += totalRecibo;
-            }
-          }
-
-          const salarioDia = 3000;
-          pagoTrabajadoresTotal += salarioDia;
-        }
-
-        const diasProcesados = Object.keys(recibosPorDia).length;
+        const diasProcesados = recibosPorDia.size;
+        const pagoTrabajadoresTotal = salarioDia * diasProcesados;
 
         let totalGastosExtras = 0;
-        // Usar el mismo cálculo de días para gastos extras
         const diasEvaluar = Array.from({ length: dias }, (_, i) =>
           fechaInicio.plus({ days: i }).toFormat("yyyy-MM-dd")
         );
@@ -200,41 +170,26 @@ export class VentasController {
           beneficioBruto -
           pagoTrabajadoresTotal -
           pagoImpuestos -
-          totalGastosExtras;
+          totalGastosExtras -
+          reinversion;
 
-        const calcularKilos = (valor: number, acumular = false) => {
-          let redondeado = Math.floor(valor / 10) * 10;
-          if (acumular) {
-            kilos += valor - redondeado;
-            // Asegurar que los residuales no superen $10
-            if (kilos >= 10) {
-              redondeado += 10;
-              kilos -= 10;
-            }
-          }
-          return redondeado;
-        };
-
-        const senjudoAlfonsoJose = calcularKilos(gananciaNeta * 0.1805, true);
+        const totalJefes = gananciaNeta;
+        const parteCadaJefe = totalJefes * 0.25;
 
         return {
           diasProcesados,
           gananciaNeta,
-          pagoTrabajadores: calcularKilos(pagoTrabajadoresTotal, true),
-          pagoImpuestos: calcularKilos(pagoImpuestos, true),
-          gastosExtras: calcularKilos(totalGastosExtras, true),
-          administradores: {
-            total: calcularKilos(gananciaNeta * 0.511),
-            alfonso: senjudoAlfonsoJose,
-            jose: senjudoAlfonsoJose,
-            carlos: calcularKilos(gananciaNeta * 0.15, true),
+          pagoTrabajadores: pagoTrabajadoresTotal,
+          pagoImpuestos,
+          gastosExtras: totalGastosExtras,
+          reinversion,
+          jefes: {
+            total: totalJefes,
+            alfonso: parteCadaJefe,
+            senjudo: parteCadaJefe,
+            josse: parteCadaJefe,
+            julio: parteCadaJefe,
           },
-          inversores: {
-            total: calcularKilos(gananciaNeta * 0.4366),
-            senjudo: senjudoAlfonsoJose,
-            adalberto: calcularKilos(gananciaNeta * 0.2561, true),
-          },
-          reinversion: gananciaNeta * 0.05 + kilos,
         };
       };
 
