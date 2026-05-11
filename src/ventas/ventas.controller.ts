@@ -82,6 +82,9 @@ export class VentasController {
       // Nuevo procesamiento de métodos de pago
       const metodosPagoMap = new Map<string, number>();
 
+      // Beneficio bruto por día (para cálculo de distribución por día)
+      const beneficioBrutoPorDia = new Map<string, number>();
+
       for (const recibo of allReceipts) {
 
         const factor =
@@ -101,11 +104,23 @@ export class VentasController {
           reembolsos += totalRecibo;
         }
 
+        const fechaRecibo = DateTime.fromISO(recibo.created_at, { zone: "utc" })
+          .setZone("America/Havana")
+          .toFormat("yyyy-MM-dd");
+
+        let beneficioReciboDia = factor * totalRecibo;
         for (const item of lineItems) {
           const cost = item.cost ?? 0;
           const quantity = item.quantity ?? 0;
-          costoTotal += factor * cost * quantity;
+          const costoItem = factor * cost * quantity;
+          costoTotal += costoItem;
+          beneficioReciboDia -= costoItem;
         }
+
+        beneficioBrutoPorDia.set(
+          fechaRecibo,
+          (beneficioBrutoPorDia.get(fechaRecibo) ?? 0) + beneficioReciboDia
+        );
 
         // Procesar métodos de pago
         for (const payment of payments) {
@@ -130,7 +145,7 @@ export class VentasController {
         descuento: name === "Tarjeta Fiscal" ? Math.round(money_amount * 0.06) : 0
       }));
 
-      // Lógica de distribución
+      // Lógica de distribución (calculada día por día)
       const calcularDistribucion = () => {
         const pagoImpuestosUnitario = 2000;
         const salarioDia = 2000;
@@ -140,40 +155,40 @@ export class VentasController {
         const fechaInicio = DateTime.fromISO(desde, { zone: "America/Havana" }).startOf('day');
         const fechaFin = DateTime.fromISO(hasta, { zone: "America/Havana" }).endOf('day');
         const dias = Math.floor(fechaFin.diff(fechaInicio, 'days').days) + 1;
-        const pagoImpuestos = pagoImpuestosUnitario * dias;
-        const reinversion = reinversionDiaria * dias;
 
-        // Agrupar recibos por día para contar días procesados
-        const recibosPorDia = new Set<string>();
-
-        for (const recibo of allReceipts) {
-          const fecha = DateTime.fromISO(recibo.created_at, { zone: "utc" })
-            .setZone("America/Havana")
-            .toFormat("yyyy-MM-dd");
-          recibosPorDia.add(fecha);
-        }
-
-        const diasProcesados = recibosPorDia.size;
-        const pagoTrabajadoresTotal = salarioDia * diasProcesados;
-
-        let totalGastosExtras = 0;
         const diasEvaluar = Array.from({ length: dias }, (_, i) =>
           fechaInicio.plus({ days: i }).toFormat("yyyy-MM-dd")
         );
 
+        const diasProcesados = beneficioBrutoPorDia.size;
+        const pagoTrabajadoresTotal = salarioDia * diasProcesados;
+        const pagoImpuestos = pagoImpuestosUnitario * dias;
+
+        let totalGastosExtras = 0;
+        let totalReinversion = 0;
+        let totalJefes = 0;
+
         for (const dia of diasEvaluar) {
-          const gasto = gastosExtras.find((g) => g.fecha === dia);
-          if (gasto) totalGastosExtras += gasto.amount;
+          const beneficioDia = beneficioBrutoPorDia.get(dia) ?? 0;
+          const tuvoVentas = beneficioBrutoPorDia.has(dia);
+          const pagoTrabajadoresDia = tuvoVentas ? salarioDia : 0;
+          const gastoDia = gastosExtras.find((g) => g.fecha === dia)?.amount ?? 0;
+          totalGastosExtras += gastoDia;
+
+          const gananciaSinReinversion =
+            beneficioDia - pagoTrabajadoresDia - pagoImpuestosUnitario - gastoDia;
+
+          // Si la ganancia del día no cubre la reinversión, los jefes ganan 0
+          // y la reinversión absorbe la diferencia (puede quedar < 1500 o negativa).
+          if (gananciaSinReinversion >= reinversionDiaria) {
+            totalReinversion += reinversionDiaria;
+            totalJefes += gananciaSinReinversion - reinversionDiaria;
+          } else {
+            totalReinversion += gananciaSinReinversion;
+          }
         }
 
-        const gananciaNeta =
-          beneficioBruto -
-          pagoTrabajadoresTotal -
-          pagoImpuestos -
-          totalGastosExtras -
-          reinversion;
-
-        const totalJefes = gananciaNeta;
+        const gananciaNeta = totalJefes;
         const parteCadaJefe = totalJefes * 0.25;
 
         return {
@@ -182,7 +197,7 @@ export class VentasController {
           pagoTrabajadores: pagoTrabajadoresTotal,
           pagoImpuestos,
           gastosExtras: totalGastosExtras,
-          reinversion,
+          reinversion: totalReinversion,
           jefes: {
             total: totalJefes,
             alfonso: parteCadaJefe,
