@@ -25,6 +25,12 @@ export class PatrimonioController {
     return this.patrimonioService.getHistorial(Number.isFinite(n) ? n : 60);
   }
 
+  // Inflación reciente del dólar (para recomendar costo/precio al dar entrada).
+  @Get("inflacion")
+  async getInflacion() {
+    return this.patrimonioService.getInflacion();
+  }
+
   // Guardar una foto manualmente.
   @Post("snapshot")
   async guardarSnapshot() {

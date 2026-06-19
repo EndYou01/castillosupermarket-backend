@@ -191,4 +191,49 @@ export class PatrimonioService {
       take: limit,
     });
   }
+
+  // Inflación del dólar (subida reciente de la TRMI), para recomendar precios.
+  // Usa la serie diaria del mirror comunitario (varios días).
+  async getInflacion() {
+    let serie: { fecha: string; valor: number }[] = [];
+    try {
+      const res = await fetch(this.CAMBIOCUBA_URL, {
+        headers: { accept: "application/json" },
+      });
+      if (res.ok) {
+        const data: any = await res.json();
+        if (Array.isArray(data)) {
+          serie = data
+            .map((x: any) => ({ fecha: x._id, valor: x.median ?? x.avg }))
+            .filter((x: any) => typeof x.valor === "number" && x.valor > 0)
+            .sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+        }
+      }
+    } catch (error) {
+      console.error("Error consultando serie de cambiocuba:", error);
+    }
+
+    if (serie.length < 2) {
+      return {
+        tasaHoy: serie[0]?.valor ?? null,
+        cambioPctDia: 0,
+        cambioPctVentana: 0,
+        diasVentana: 0,
+      };
+    }
+
+    const primero = serie[0].valor;
+    const ultimo = serie[serie.length - 1].valor;
+    const dias = serie.length - 1;
+    const cambioPctVentana = (ultimo - primero) / primero;
+    // Crecimiento diario compuesto.
+    const cambioPctDia = Math.pow(ultimo / primero, 1 / dias) - 1;
+
+    return {
+      tasaHoy: ultimo,
+      cambioPctDia,
+      cambioPctVentana,
+      diasVentana: dias,
+    };
+  }
 }
