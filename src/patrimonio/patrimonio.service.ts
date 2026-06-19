@@ -117,8 +117,14 @@ export class PatrimonioService {
     };
   }
 
-  // Guarda una foto del patrimonio actual (la usa el cron y el botón manual).
+  // Guarda un registro del patrimonio actual (lo usa el cron y el botón manual).
+  // Si el patrimonio real (USD) bajó respecto al registro anterior, avisa por Telegram.
   async guardarSnapshot() {
+    const [anterior] = await this.snapshotRepo.find({
+      order: { fecha: "DESC" },
+      take: 1,
+    });
+
     const p = await this.getPatrimonio();
     const snap = await this.snapshotRepo.save(
       this.snapshotRepo.create({
@@ -129,7 +135,53 @@ export class PatrimonioService {
         totalUsd: p.totalUsd,
       })
     );
+
+    // Avisar SOLO si el patrimonio (en CUP) bajó respecto al registro anterior.
+    if (anterior && snap.totalCup < anterior.totalCup) {
+      await this.enviarAlertaTelegram(anterior, snap);
+    }
+
     return snap;
+  }
+
+  // Envía un aviso al canal de Telegram cuando el patrimonio baja.
+  private async enviarAlertaTelegram(
+    anterior: PatrimonioSnapshot,
+    actual: PatrimonioSnapshot
+  ) {
+    const token = this.configService.get<string>("TELEGRAM_BOT_TOKEN");
+    const chatId = this.configService.get<string>("TELEGRAM_CHANNEL_ID");
+    if (!token || !chatId) return;
+
+    const diff = actual.totalCup - anterior.totalCup; // negativo
+    const texto =
+      `⚠️ *El patrimonio de Castillo bajó*\n\n` +
+      `Antes: ${Math.round(anterior.totalCup)} cup\n` +
+      `Ahora: ${Math.round(actual.totalCup)} cup\n` +
+      `Diferencia: ${Math.round(diff)} cup\n\n` +
+      `(Capital ${Math.round(actual.capital)} + inventario ${Math.round(
+        actual.inventario
+      )})`;
+
+    try {
+      const res = await fetch(
+        `https://api.telegram.org/bot${token}/sendMessage`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: texto,
+            parse_mode: "Markdown",
+          }),
+        }
+      );
+      if (!res.ok) {
+        console.error("Error Telegram sendMessage:", res.status, await res.text());
+      }
+    } catch (error) {
+      console.error("Error enviando alerta a Telegram:", error);
+    }
   }
 
   // Historial de fotos para la tendencia (más reciente primero).
