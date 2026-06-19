@@ -8,6 +8,8 @@ import { ProductosModule } from './productos/productos.module';
 import { CategoriasModule } from './categorias/categorias.module';
 import { CapitalModule } from './capital/capital.module';
 import { Baja, Capital, MovimientoCapital } from './capital/capital.entities';
+import { PatrimonioModule } from './patrimonio/patrimonio.module';
+import { PatrimonioSnapshot } from './patrimonio/patrimonio.entity';
 // import { UsersModule } from './users/users.module';
 // import { AuthModule } from './auth/auth.module';
 // import { User } from './users/users.entity';
@@ -20,7 +22,7 @@ import { Baja, Capital, MovimientoCapital } from './capital/capital.entities';
     TypeOrmModule.forRoot({
       type: 'postgres',
       url: process.env.DATABASE_URL, // Neon (pooled connection string)
-      entities: [Capital, MovimientoCapital, Baja],
+      entities: [Capital, MovimientoCapital, Baja, PatrimonioSnapshot],
       synchronize: true, // crea/actualiza las tablas automáticamente (MVP)
       ssl: { rejectUnauthorized: false }, // requerido por Neon
     }),
@@ -28,6 +30,7 @@ import { Baja, Capital, MovimientoCapital } from './capital/capital.entities';
     ProductosModule,
     CategoriasModule,
     CapitalModule,
+    PatrimonioModule,
     // AuthModule,
     // UsersModule,
 
