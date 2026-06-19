@@ -136,18 +136,19 @@ export class CapitalService {
     const ventas = await this.ventasService.obtenerVentasPorRango(desde, hasta);
     const d = ventas.distribucion;
 
-    const reparto =
+    // Lo que SALE del negocio en el día (va a personas o al banco). La reinversión
+    // y el costo de la mercancía NO se restan: ese dinero se queda en la caja para
+    // reponer, así que sigue siendo capital disponible.
+    const salidas =
       d.pagoTrabajadores +
       d.pagoImpuestos +
       d.gastosExtras +
-      d.reinversion +
       d.estimulo +
       d.limpieza +
-      d.jefes.total;
+      d.jefes.total +
+      ventas.descuentoFiscal;
 
-    // El costo de la mercancía vendida queda líquido para reponer; la ganancia
-    // se reparte. Por eso el capital sube en (venta neta − reparto).
-    const delta = ventas.ventaNeta - reparto;
+    const delta = ventas.ventaNeta - salidas;
 
     const { saldo, movimiento } = await this.aplicarMovimiento(
       "CIERRE",
@@ -156,7 +157,7 @@ export class CapitalService {
       {
         fecha,
         ventaNeta: ventas.ventaNeta,
-        reparto,
+        salidas,
         recibosProcesados: ventas.recibosProcesados,
       }
     );
