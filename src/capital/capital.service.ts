@@ -5,7 +5,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { Between, Repository } from "typeorm";
 import { DateTime } from "luxon";
 import { VentasService } from "../ventas/ventas.service";
 import { Baja, Capital, MovimientoCapital, TipoMovimiento } from "./capital.entities";
@@ -87,6 +87,41 @@ export class CapitalService {
       monto: capital.monto,
       actualizadoEn: capital.actualizadoEn,
       movimientos,
+    };
+  }
+
+  // GET /capital/bajas?mes=YYYY-MM → bajas del mes + valor total (al costo).
+  async getBajas(mes?: string) {
+    const base = mes
+      ? DateTime.fromFormat(mes, "yyyy-MM", { zone: this.ZONE })
+      : DateTime.now().setZone(this.ZONE);
+
+    if (!base.isValid) {
+      throw new BadRequestException("Mes inválido (use el formato YYYY-MM)");
+    }
+
+    const inicio = base.startOf("month").toUTC().toJSDate();
+    const fin = base.endOf("month").toUTC().toJSDate();
+
+    const bajas = await this.bajaRepo.find({
+      where: { fecha: Between(inicio, fin) },
+      order: { fecha: "DESC" },
+    });
+
+    // El dinero que representa una baja es su COSTO (costo × cantidad), no el precio.
+    const totalCosto = bajas.reduce(
+      (s, b) => s + b.costoUnitario * b.cantidad,
+      0
+    );
+    const totalPartePagada = bajas.reduce((s, b) => s + b.partePagada, 0);
+
+    return {
+      mes: base.toFormat("yyyy-MM"),
+      totalCosto,
+      totalPartePagada,
+      totalNeto: totalCosto - totalPartePagada,
+      cantidadBajas: bajas.length,
+      bajas,
     };
   }
 

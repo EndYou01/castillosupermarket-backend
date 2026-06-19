@@ -5,6 +5,7 @@ import {
   Headers,
   Post,
   Put,
+  Query,
   UnauthorizedException,
 } from "@nestjs/common";
 import { CapitalService, DarBajaDto } from "./capital.service";
@@ -51,6 +52,12 @@ export class CapitalController {
         message: error?.message ?? "No se registró el cierre",
       };
     }
+  }
+
+  // Lista de bajas de un mes + valor total (al costo).
+  @Get("bajas")
+  async getBajas(@Query("mes") mes?: string) {
+    return this.capitalService.getBajas(mes);
   }
 
   // Dar baja a un producto (rebaja stock en Loyverse + suma la parte pagada).
