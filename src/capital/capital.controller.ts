@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, Put } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Post,
+  Put,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { CapitalService, DarBajaDto } from "./capital.service";
 
 @Controller("capital")
@@ -18,10 +26,31 @@ export class CapitalController {
     return this.capitalService.setConteo(body.monto, body.descripcion);
   }
 
-  // Registrar el cierre de un día (suma venta neta − reparto).
+  // Registrar el cierre de un día (suma venta neta − reparto). Manual.
   @Post("cierre")
   async registrarCierre(@Body() body: { fecha?: string }) {
     return this.capitalService.registrarCierre(body?.fecha);
+  }
+
+  // Cierre automático disparado por Vercel Cron. Protegido con CRON_SECRET.
+  @Get("cierre-cron")
+  async registrarCierreCron(@Headers("authorization") authorization?: string) {
+    const secret = process.env.CRON_SECRET;
+    if (!secret || authorization !== `Bearer ${secret}`) {
+      throw new UnauthorizedException("Cron no autorizado");
+    }
+
+    try {
+      const resultado = await this.capitalService.registrarCierre();
+      return { ok: true, ...resultado };
+    } catch (error) {
+      // Si el cierre del día ya estaba registrado (p. ej. lo hiciste manual),
+      // no es un fallo: respondemos 200 para que el cron no quede en error.
+      return {
+        ok: false,
+        message: error?.message ?? "No se registró el cierre",
+      };
+    }
   }
 
   // Dar baja a un producto (rebaja stock en Loyverse + suma la parte pagada).
