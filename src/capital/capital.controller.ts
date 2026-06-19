@@ -8,7 +8,7 @@ import {
   Query,
   UnauthorizedException,
 } from "@nestjs/common";
-import { CapitalService, DarBajaDto } from "./capital.service";
+import { CapitalService, DarBajaDto, DarEntradaDto } from "./capital.service";
 
 @Controller("capital")
 export class CapitalController {
@@ -64,5 +64,11 @@ export class CapitalController {
   @Post("baja")
   async darBaja(@Body() body: DarBajaDto) {
     return this.capitalService.darBaja(body);
+  }
+
+  // Dar entrada a un producto (suma stock, edita costo/precio, resta del capital).
+  @Post("entrada")
+  async darEntrada(@Body() body: DarEntradaDto) {
+    return this.capitalService.darEntrada(body);
   }
 }

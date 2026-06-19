@@ -155,6 +155,7 @@ export class ProductosController {
             item_name: producto.item_name,
             description: producto.description,
             cost: 0,
+            price: 0,
             quantity: 0,
             variant_id: null,
           };
@@ -165,11 +166,17 @@ export class ProductosController {
           (item) => item.variant_id === variant.variant_id
         );
 
+        const precioTienda =
+          variant.stores?.find((s) => s.store_id === this.storeId)?.price ??
+          variant.default_price ??
+          0;
+
         return {
           id: producto.id,
           item_name: producto.item_name,
           description: producto.description,
           cost: variant.cost || 0,
+          price: precioTienda,
           quantity: inventoryItem?.in_stock || 0,
           variant_id: variant.variant_id,
           inventory_found: !!inventoryItem, // Para debug

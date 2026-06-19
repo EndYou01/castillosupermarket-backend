@@ -20,6 +20,15 @@ export interface DarBajaDto {
   motivo: string;
 }
 
+export interface DarEntradaDto {
+  variantId: string;
+  itemId: string;
+  itemName: string;
+  cantidad: number;
+  nuevoCosto: number;
+  nuevoPrecio: number;
+}
+
 @Injectable()
 export class CapitalService {
   private readonly LOYVERSE_BASE = "https://api.loyverse.com/v1.0";
@@ -267,6 +276,124 @@ export class CapitalService {
     }
 
     return { baja, monto: saldo, stockAntes, stockDespues };
+  }
+
+  // POST /capital/entrada → suma stock en Loyverse, actualiza costo/precio del
+  // producto y resta del capital el costo de lo que entró (costo × cantidad).
+  async darEntrada(dto: DarEntradaDto) {
+    const cantidad = Number(dto.cantidad);
+    const nuevoCosto = Number(dto.nuevoCosto);
+    const nuevoPrecio = Number(dto.nuevoPrecio);
+
+    if (!dto.variantId || !dto.itemId) {
+      throw new BadRequestException("Falta el producto");
+    }
+    if (!Number.isFinite(cantidad) || cantidad <= 0) {
+      throw new BadRequestException("La cantidad debe ser mayor que 0");
+    }
+    if (!Number.isFinite(nuevoCosto) || nuevoCosto < 0) {
+      throw new BadRequestException("El costo no es válido");
+    }
+    if (!Number.isFinite(nuevoPrecio) || nuevoPrecio < 0) {
+      throw new BadRequestException("El precio no es válido");
+    }
+
+    const stockAntes = await this.getStockActual(dto.variantId);
+    if (stockAntes === null) {
+      throw new BadRequestException(
+        "No se encontró el inventario del producto en Loyverse"
+      );
+    }
+    const stockDespues = stockAntes + cantidad;
+
+    // 1) Actualizar costo y precio del producto (si falla, no tocamos nada más).
+    await this.actualizarItemLoyverse(
+      dto.itemId,
+      dto.variantId,
+      nuevoCosto,
+      nuevoPrecio
+    );
+
+    // 2) Sumar el stock.
+    await this.actualizarStockLoyverse(dto.variantId, stockDespues);
+
+    // 3) Restar del capital el costo de la mercancía que entró.
+    const costoEntrada = nuevoCosto * cantidad;
+    const { saldo } = await this.aplicarMovimiento(
+      "COMPRA",
+      -costoEntrada,
+      `Entrada de ${cantidad} × ${dto.itemName}`,
+      {
+        variantId: dto.variantId,
+        cantidad,
+        nuevoCosto,
+        nuevoPrecio,
+        costoEntrada,
+      }
+    );
+
+    return { monto: saldo, stockAntes, stockDespues, costoEntrada };
+  }
+
+  // Actualiza el costo y el precio (de esta tienda) de un producto en Loyverse.
+  // Lee el item completo, modifica solo lo necesario y lo devuelve entero para
+  // no borrar otros datos ni afectar la otra tienda.
+  private async actualizarItemLoyverse(
+    itemId: string,
+    variantId: string,
+    nuevoCosto: number,
+    nuevoPrecio: number
+  ) {
+    const getRes = await fetch(`${this.LOYVERSE_BASE}/items/${itemId}`, {
+      headers: {
+        Authorization: `Bearer ${this.loyverseToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+    if (!getRes.ok) {
+      const body: any = await getRes.json().catch(() => ({}));
+      throw new InternalServerErrorException(
+        body.errors?.[0]?.details || "No se encontró el producto en Loyverse"
+      );
+    }
+    const item: any = await getRes.json();
+
+    const stripReadOnly = (o: any) => {
+      delete o.created_at;
+      delete o.updated_at;
+      delete o.deleted_at;
+      delete o.source;
+    };
+    stripReadOnly(item);
+    for (const v of item.variants ?? []) {
+      stripReadOnly(v);
+      for (const s of v.stores ?? []) stripReadOnly(s);
+      if (v.variant_id === variantId) {
+        v.cost = nuevoCosto;
+        v.default_price = nuevoPrecio;
+        for (const s of v.stores ?? []) {
+          if (s.store_id === this.storeId) s.price = nuevoPrecio;
+        }
+      }
+    }
+
+    const res = await fetch(`${this.LOYVERSE_BASE}/items`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.loyverseToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(item),
+    });
+    if (!res.ok) {
+      const body: any = await res.json().catch(() => ({}));
+      console.error("Error actualizando producto en Loyverse:", body);
+      throw new InternalServerErrorException(
+        body.errors?.[0]?.details ||
+          "No se pudo actualizar el costo/precio en Loyverse"
+      );
+    }
+    return res.json();
   }
 
   // Lee el stock actual de una variante en la tienda, paginando el inventario.
