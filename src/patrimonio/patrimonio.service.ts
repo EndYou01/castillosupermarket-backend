@@ -9,6 +9,8 @@ import { PatrimonioSnapshot } from "./patrimonio.entity";
 @Injectable()
 export class PatrimonioService {
   private readonly ELTOQUE_URL = "https://tasas.eltoque.com/v1/trmi";
+  private readonly CAMBIOCUBA_URL =
+    "https://api.cambiocuba.money/api/v1/x-rates-by-date-range?cur=USD&trmi=true";
 
   constructor(
     @InjectRepository(Capital)
@@ -19,18 +21,22 @@ export class PatrimonioService {
     private readonly configService: ConfigService
   ) {}
 
-  // Tasa del dólar (CUP por USD) desde eltoque. Devuelve null si no hay token
-  // o si la API falla (el llamador puede caer al último valor conocido).
+  // Tasa del dólar (CUP por USD). Intenta primero la API oficial de eltoque (si
+  // hay token) y, si no, cae al mirror comunitario cambiocuba.money (sin token).
+  // Devuelve null si ninguna responde.
   private async getTasaUSDLive(): Promise<number | null> {
     const token = this.configService.get<string>("EL_TOQUE_API_TOKEN");
-    if (!token) return null;
+    if (token) {
+      const oficial = await this.fetchEltoqueOficial(token);
+      if (oficial) return oficial;
+    }
+    return this.fetchCambioCubaMirror();
+  }
 
+  private async fetchEltoqueOficial(token: string): Promise<number | null> {
     try {
       const res = await fetch(this.ELTOQUE_URL, {
-        headers: {
-          accept: "*/*",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { accept: "*/*", Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
         console.error("eltoque API error:", res.status);
@@ -41,6 +47,28 @@ export class PatrimonioService {
       return typeof usd === "number" && usd > 0 ? usd : null;
     } catch (error) {
       console.error("Error consultando eltoque:", error);
+      return null;
+    }
+  }
+
+  // Mirror comunitario de la TRMI, sin token. Toma la mediana del día más
+  // reciente (coincide con la tasa oficial de eltoque).
+  private async fetchCambioCubaMirror(): Promise<number | null> {
+    try {
+      const res = await fetch(this.CAMBIOCUBA_URL, {
+        headers: { accept: "application/json" },
+      });
+      if (!res.ok) {
+        console.error("cambiocuba API error:", res.status);
+        return null;
+      }
+      const data: any = await res.json();
+      if (!Array.isArray(data) || data.length === 0) return null;
+      const ultimo = data.reduce((a: any, b: any) => (a._id > b._id ? a : b));
+      const val = ultimo?.median ?? ultimo?.avg;
+      return typeof val === "number" && val > 0 ? val : null;
+    } catch (error) {
+      console.error("Error consultando cambiocuba.money:", error);
       return null;
     }
   }
