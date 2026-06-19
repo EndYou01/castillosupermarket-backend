@@ -4,6 +4,7 @@ export interface IVentasResponse {
   ventaNeta: number;
   costoTotal: number;
   beneficioBruto: number;
+  descuentoFiscal: number;
   recibosProcesados: number;
   distribucion: {
     gastosExtras: number;
@@ -12,6 +13,8 @@ export interface IVentasResponse {
     pagoTrabajadores: number;
     pagoImpuestos: number;
     reinversion: number;
+    estimulo: number;
+    limpieza: number;
     jefes: {
       total: number;
       alfonso: number;

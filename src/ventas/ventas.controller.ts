@@ -7,7 +7,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { DateTime } from "luxon";
 import { IReceipt, IVentasResponse } from "src/interfaces/interfaces";
-import { gastosExtras } from '../static/staticData';
+import { gastosExtras, estimuloConfig, limpiezaConfig } from '../static/staticData';
 
 @Controller("ventas")
 export class VentasController {
@@ -78,6 +78,7 @@ export class VentasController {
       let ventaBruta = 0;
       let reembolsos = 0;
       let costoTotal = 0;
+      let descuentoFiscalTotal = 0;
 
       // Nuevo procesamiento de métodos de pago
       const metodosPagoMap = new Map<string, number>();
@@ -117,15 +118,15 @@ export class VentasController {
           beneficioReciboDia -= costoItem;
         }
 
-        beneficioBrutoPorDia.set(
-          fechaRecibo,
-          (beneficioBrutoPorDia.get(fechaRecibo) ?? 0) + beneficioReciboDia
-        );
-
-        // Procesar métodos de pago
+        // Procesar métodos de pago (y el descuento fiscal del 6%)
+        let descuentoFiscalRecibo = 0;
         for (const payment of payments) {
           const paymentName = payment.name ?? "Sin nombre";
           const paymentAmount = (payment.money_amount ?? 0) * factor;
+
+          if (paymentName === "Tarjeta Fiscal") {
+            descuentoFiscalRecibo += paymentAmount * 0.06;
+          }
 
           if (metodosPagoMap.has(paymentName)) {
             metodosPagoMap.set(paymentName, metodosPagoMap.get(paymentName)! + paymentAmount);
@@ -133,10 +134,19 @@ export class VentasController {
             metodosPagoMap.set(paymentName, paymentAmount);
           }
         }
+
+        // El 6% de Tarjeta Fiscal es un costo real: se resta de la ganancia bruta.
+        descuentoFiscalTotal += descuentoFiscalRecibo;
+        beneficioReciboDia -= descuentoFiscalRecibo;
+
+        beneficioBrutoPorDia.set(
+          fechaRecibo,
+          (beneficioBrutoPorDia.get(fechaRecibo) ?? 0) + beneficioReciboDia
+        );
       }
 
       const ventaNeta = ventaBruta - reembolsos;
-      const beneficioBruto = ventaNeta - costoTotal;
+      const beneficioBruto = ventaNeta - costoTotal - descuentoFiscalTotal;
 
       // Convertir Map a array para métodos de pago
       const metodos_pago = Array.from(metodosPagoMap.entries()).map(([name, money_amount]) => ({
@@ -167,6 +177,12 @@ export class VentasController {
         let totalGastosExtras = 0;
         let totalReinversion = 0;
         let totalJefes = 0;
+        let totalEstimulo = 0;
+        let totalLimpieza = 0;
+
+        const anchorEstimulo = DateTime.fromISO(estimuloConfig.anchor, {
+          zone: "America/Havana",
+        });
 
         for (const dia of diasEvaluar) {
           const beneficioDia = beneficioBrutoPorDia.get(dia) ?? 0;
@@ -175,16 +191,32 @@ export class VentasController {
           const gastoDia = gastosExtras.find((g) => g.fecha === dia)?.amount ?? 0;
           totalGastosExtras += gastoDia;
 
+          // Estímulo (200, patrón "2 días sí / 2 días no") y limpieza/Mary (1000 los
+          // domingos). Ambos se rebajan de la reinversión base de 1500, así que la
+          // reinversión real del día puede ser 1500 / 1300 / 500 / 200.
+          const fecha = DateTime.fromISO(dia, { zone: "America/Havana" });
+          const diasDesdeAnchor = Math.floor(
+            fecha.diff(anchorEstimulo, "days").days
+          );
+          const enCicloEstimulo = (((diasDesdeAnchor % 4) + 4) % 4) < 2;
+          const estimuloDia =
+            tuvoVentas && enCicloEstimulo ? estimuloConfig.monto : 0;
+          const limpiezaDia =
+            tuvoVentas && fecha.weekday === 7 ? limpiezaConfig.monto : 0;
+          totalEstimulo += estimuloDia;
+          totalLimpieza += limpiezaDia;
+
           const gananciaSinReinversion =
             beneficioDia - pagoTrabajadoresDia - pagoImpuestosUnitario - gastoDia;
 
-          // Si la ganancia del día no cubre la reinversión, los jefes ganan 0
-          // y la reinversión absorbe la diferencia (puede quedar < 1500 o negativa).
+          // La reinversión base (1500) se reserva antes de que cobren los jefes;
+          // de ella salen el estímulo y la limpieza. Si el día no cubre la base,
+          // los jefes ganan 0 y la reinversión absorbe la diferencia.
           if (gananciaSinReinversion >= reinversionDiaria) {
-            totalReinversion += reinversionDiaria;
+            totalReinversion += reinversionDiaria - estimuloDia - limpiezaDia;
             totalJefes += gananciaSinReinversion - reinversionDiaria;
           } else {
-            totalReinversion += gananciaSinReinversion;
+            totalReinversion += gananciaSinReinversion - estimuloDia - limpiezaDia;
           }
         }
 
@@ -198,6 +230,8 @@ export class VentasController {
           pagoImpuestos,
           gastosExtras: totalGastosExtras,
           reinversion: totalReinversion,
+          estimulo: totalEstimulo,
+          limpieza: totalLimpieza,
           jefes: {
             total: totalJefes,
             alfonso: parteCadaJefe,
@@ -216,6 +250,7 @@ export class VentasController {
         ventaNeta,
         costoTotal,
         beneficioBruto,
+        descuentoFiscal: Math.round(descuentoFiscalTotal),
         recibosProcesados: allReceipts.length,
         distribucion,
         metodos_pago,
