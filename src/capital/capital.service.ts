@@ -32,7 +32,8 @@ export interface DarEntradaDto {
 export interface TransformarDto {
   variantXId: string;
   variantYId: string;
-  cantidad: number;
+  cantidad: number; // unidades de X que se consumen (N)
+  cantidadDestino: number; // unidades de Y que se producen (M)
   itemXName?: string;
   itemYName?: string;
 }
@@ -448,10 +449,12 @@ export class CapitalService {
     return res.json();
   }
 
-  // POST /capital/transformacion → convierte N unidades del producto X en N del
-  // producto Y (X baja N, Y sube N). Solo mueve stock, no toca el capital.
+  // POST /capital/transformacion → convierte N unidades del producto X en M del
+  // producto Y (X baja N, Y sube M). Ej: 1 blíster → 18 huevos sueltos.
+  // Solo mueve stock, no toca el capital.
   async transformarProducto(dto: TransformarDto) {
     const cantidad = Number(dto.cantidad);
+    const cantidadDestino = Number(dto.cantidadDestino);
     if (!dto.variantXId || !dto.variantYId) {
       throw new BadRequestException("Faltan productos");
     }
@@ -459,7 +462,10 @@ export class CapitalService {
       throw new BadRequestException("Elige dos productos distintos");
     }
     if (!Number.isFinite(cantidad) || cantidad <= 0) {
-      throw new BadRequestException("La cantidad debe ser mayor que 0");
+      throw new BadRequestException("La cantidad a transformar debe ser mayor que 0");
+    }
+    if (!Number.isFinite(cantidadDestino) || cantidadDestino <= 0) {
+      throw new BadRequestException("La cantidad resultante debe ser mayor que 0");
     }
 
     const [stockX, stockY] = await Promise.all([
@@ -478,12 +484,12 @@ export class CapitalService {
     }
 
     await this.actualizarStockLoyverse(dto.variantXId, stockX - cantidad);
-    await this.actualizarStockLoyverse(dto.variantYId, stockY + cantidad);
+    await this.actualizarStockLoyverse(dto.variantYId, stockY + cantidadDestino);
 
     return {
       ok: true,
       x: { antes: stockX, despues: stockX - cantidad },
-      y: { antes: stockY, despues: stockY + cantidad },
+      y: { antes: stockY, despues: stockY + cantidadDestino },
     };
   }
 
