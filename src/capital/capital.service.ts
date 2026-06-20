@@ -143,6 +143,32 @@ export class CapitalService {
     };
   }
 
+  // GET /capital/extracciones?desde&hasta → extracciones de caja en el rango.
+  // Sirve para mostrar en el resumen cuánto efectivo salió de la caja (y por tanto
+  // cuánto debería haber realmente vs lo que reportan las ventas).
+  async getExtracciones(desdeStr?: string, hastaStr?: string) {
+    const now = DateTime.now().setZone(this.ZONE);
+    const inicio = (
+      desdeStr ? DateTime.fromISO(desdeStr) : now.startOf("day")
+    ).toJSDate();
+    const fin = (
+      hastaStr ? DateTime.fromISO(hastaStr) : now.endOf("day")
+    ).toJSDate();
+
+    if (Number.isNaN(inicio.getTime()) || Number.isNaN(fin.getTime())) {
+      throw new BadRequestException("Rango de fechas inválido");
+    }
+
+    const movimientos = await this.movimientoRepo.find({
+      where: { tipo: "EXTRACCION", fecha: Between(inicio, fin) },
+      order: { fecha: "DESC" },
+    });
+
+    const total = movimientos.reduce((s, m) => s + m.monto, 0);
+
+    return { total, cantidad: movimientos.length, movimientos };
+  }
+
   // PUT /capital → fijar el valor absoluto (lo usas en cada conteo físico).
   async setConteo(monto: number, descripcion?: string) {
     if (typeof monto !== "number" || Number.isNaN(monto)) {

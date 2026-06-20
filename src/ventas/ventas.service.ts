@@ -80,6 +80,11 @@ export class VentasService {
       // Beneficio bruto por día (para cálculo de distribución por día)
       const beneficioBrutoPorDia = new Map<string, number>();
 
+      // Dinero que entra por "Tarjeta Fiscal" por día. Es lo que se transfiere a
+      // esa tarjeta para, a fin de mes, pagar los impuestos. Reemplaza al antiguo
+      // "impuestos" fijo de 2000/día: ahora es variable según lo que pasó ese día.
+      const tarjetaFiscalPorDia = new Map<string, number>();
+
       for (const recibo of allReceipts) {
         const factor =
           recibo.receipt_type === "SALE"
@@ -119,6 +124,10 @@ export class VentasService {
 
           if (paymentName === "Tarjeta Fiscal") {
             descuentoFiscalRecibo += paymentAmount * 0.06;
+            tarjetaFiscalPorDia.set(
+              fechaRecibo,
+              (tarjetaFiscalPorDia.get(fechaRecibo) ?? 0) + paymentAmount
+            );
           }
 
           if (metodosPagoMap.has(paymentName)) {
@@ -156,7 +165,6 @@ export class VentasService {
 
       // Lógica de distribución (calculada día por día)
       const calcularDistribucion = () => {
-        const pagoImpuestosUnitario = 2000;
         const salarioDia = 2000;
         const reinversionDiaria = 1500;
 
@@ -175,8 +183,8 @@ export class VentasService {
 
         const diasProcesados = beneficioBrutoPorDia.size;
         const pagoTrabajadoresTotal = salarioDia * diasProcesados;
-        const pagoImpuestos = pagoImpuestosUnitario * dias;
 
+        let totalImpuestos = 0;
         let totalGastosExtras = 0;
         let totalReinversion = 0;
         let totalJefes = 0;
@@ -191,6 +199,13 @@ export class VentasService {
           const beneficioDia = beneficioBrutoPorDia.get(dia) ?? 0;
           const tuvoVentas = beneficioBrutoPorDia.has(dia);
           const pagoTrabajadoresDia = tuvoVentas ? salarioDia : 0;
+
+          // "Impuestos" del día = lo que entró por Tarjeta Fiscal ese día. Es el
+          // dinero que se aparta (en esa tarjeta) para pagar impuestos a fin de
+          // mes; variable, ya no fijo. Reduce la ganancia de los jefes.
+          const impuestosDia = tarjetaFiscalPorDia.get(dia) ?? 0;
+          totalImpuestos += impuestosDia;
+
           const gastoDia =
             gastosExtras.find((g) => g.fecha === dia)?.amount ?? 0;
           totalGastosExtras += gastoDia;
@@ -211,7 +226,7 @@ export class VentasService {
           totalLimpieza += limpiezaDia;
 
           const gananciaSinReinversion =
-            beneficioDia - pagoTrabajadoresDia - pagoImpuestosUnitario - gastoDia;
+            beneficioDia - pagoTrabajadoresDia - impuestosDia - gastoDia;
 
           // La reinversión base (1500) se reserva antes de que cobren los jefes;
           // de ella salen el estímulo y la limpieza. Si el día no cubre la base,
@@ -231,7 +246,7 @@ export class VentasService {
           diasProcesados,
           gananciaNeta,
           pagoTrabajadores: pagoTrabajadoresTotal,
-          pagoImpuestos,
+          pagoImpuestos: totalImpuestos,
           gastosExtras: totalGastosExtras,
           reinversion: totalReinversion,
           estimulo: totalEstimulo,

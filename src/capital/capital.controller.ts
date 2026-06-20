@@ -59,6 +59,15 @@ export class CapitalController {
     }
   }
 
+  // Extracciones de caja en un rango (para el resumen: efectivo real vs esperado).
+  @Get("extracciones")
+  async getExtracciones(
+    @Query("desde") desde?: string,
+    @Query("hasta") hasta?: string
+  ) {
+    return this.capitalService.getExtracciones(desde, hasta);
+  }
+
   // Lista de bajas de un mes + valor total (al costo).
   @Get("bajas")
   async getBajas(@Query("mes") mes?: string) {
