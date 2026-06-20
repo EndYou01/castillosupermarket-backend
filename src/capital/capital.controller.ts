@@ -8,7 +8,12 @@ import {
   Query,
   UnauthorizedException,
 } from "@nestjs/common";
-import { CapitalService, DarBajaDto, DarEntradaDto } from "./capital.service";
+import {
+  CapitalService,
+  DarBajaDto,
+  DarEntradaDto,
+  TransformarDto,
+} from "./capital.service";
 
 @Controller("capital")
 export class CapitalController {
@@ -70,5 +75,23 @@ export class CapitalController {
   @Post("entrada")
   async darEntrada(@Body() body: DarEntradaDto) {
     return this.capitalService.darEntrada(body);
+  }
+
+  // Extracción de caja: pasa dinero al capital (para comprar).
+  @Post("extraccion")
+  async extraccion(@Body() body: { monto: number; descripcion?: string }) {
+    return this.capitalService.registrarExtraccion(body.monto, body.descripcion);
+  }
+
+  // Inyección de capital: mete dinero externo al capital disponible.
+  @Post("inyeccion")
+  async inyeccion(@Body() body: { monto: number; descripcion?: string }) {
+    return this.capitalService.registrarInyeccion(body.monto, body.descripcion);
+  }
+
+  // Transformación de producto: convierte N de X en N de Y.
+  @Post("transformacion")
+  async transformacion(@Body() body: TransformarDto) {
+    return this.capitalService.transformarProducto(body);
   }
 }

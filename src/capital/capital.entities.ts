@@ -7,7 +7,14 @@ import {
 } from "typeorm";
 
 // Tipos de movimiento que afectan el capital disponible.
-export type TipoMovimiento = "CONTEO" | "CIERRE" | "BAJA" | "COMPRA" | "AJUSTE";
+export type TipoMovimiento =
+  | "CONTEO"
+  | "CIERRE"
+  | "BAJA"
+  | "COMPRA"
+  | "AJUSTE"
+  | "EXTRACCION"
+  | "INYECCION";
 
 // Capital disponible: una sola fila (singleton, id = 1) con el monto actual.
 @Entity("capital")

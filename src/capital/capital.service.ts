@@ -29,6 +29,14 @@ export interface DarEntradaDto {
   nuevoPrecio: number;
 }
 
+export interface TransformarDto {
+  variantXId: string;
+  variantYId: string;
+  cantidad: number;
+  itemXName?: string;
+  itemYName?: string;
+}
+
 @Injectable()
 export class CapitalService {
   private readonly LOYVERSE_BASE = "https://api.loyverse.com/v1.0";
@@ -192,7 +200,19 @@ export class CapitalService {
       d.jefes.total +
       ventas.descuentoFiscal;
 
-    const delta = ventas.ventaNeta - salidas;
+    // Lo retenido del día que se queda como capital disponible.
+    const retenido = ventas.ventaNeta - salidas;
+
+    // Si durante el día ya se extrajo dinero de la caja hacia el capital, eso ya
+    // se sumó; lo restamos del cierre para no contarlo dos veces.
+    const inicioDia = dia.startOf("day").toUTC().toJSDate();
+    const finDia = dia.endOf("day").toUTC().toJSDate();
+    const extraccionesHoy = await this.movimientoRepo.find({
+      where: { tipo: "EXTRACCION", fecha: Between(inicioDia, finDia) },
+    });
+    const totalExtraido = extraccionesHoy.reduce((s, m) => s + m.monto, 0);
+
+    const delta = retenido - totalExtraido;
 
     const { saldo, movimiento } = await this.aplicarMovimiento(
       "CIERRE",
@@ -202,11 +222,43 @@ export class CapitalService {
         fecha,
         ventaNeta: ventas.ventaNeta,
         salidas,
+        retenido,
+        extraido: totalExtraido,
         recibosProcesados: ventas.recibosProcesados,
       }
     );
 
     return { monto: saldo, delta, fecha, movimiento };
+  }
+
+  // POST /capital/extraccion → saca dinero de la caja hacia el capital disponible
+  // (para comprar). Se registra y el cierre del día lo descuenta.
+  async registrarExtraccion(monto: number, descripcion?: string) {
+    const m = Number(monto);
+    if (!Number.isFinite(m) || m <= 0) {
+      throw new BadRequestException("El monto debe ser mayor que 0");
+    }
+    const { saldo, movimiento } = await this.aplicarMovimiento(
+      "EXTRACCION",
+      m,
+      descripcion ?? "Extracción de caja",
+      { fecha: DateTime.now().setZone(this.ZONE).toFormat("yyyy-MM-dd") }
+    );
+    return { monto: saldo, movimiento };
+  }
+
+  // POST /capital/inyeccion → mete dinero externo al capital disponible.
+  async registrarInyeccion(monto: number, descripcion?: string) {
+    const m = Number(monto);
+    if (!Number.isFinite(m) || m <= 0) {
+      throw new BadRequestException("El monto debe ser mayor que 0");
+    }
+    const { saldo, movimiento } = await this.aplicarMovimiento(
+      "INYECCION",
+      m,
+      descripcion ?? "Inyección de capital"
+    );
+    return { monto: saldo, movimiento };
   }
 
   // POST /capital/baja → rebaja stock en Loyverse, registra la baja y suma la
@@ -394,6 +446,45 @@ export class CapitalService {
       );
     }
     return res.json();
+  }
+
+  // POST /capital/transformacion → convierte N unidades del producto X en N del
+  // producto Y (X baja N, Y sube N). Solo mueve stock, no toca el capital.
+  async transformarProducto(dto: TransformarDto) {
+    const cantidad = Number(dto.cantidad);
+    if (!dto.variantXId || !dto.variantYId) {
+      throw new BadRequestException("Faltan productos");
+    }
+    if (dto.variantXId === dto.variantYId) {
+      throw new BadRequestException("Elige dos productos distintos");
+    }
+    if (!Number.isFinite(cantidad) || cantidad <= 0) {
+      throw new BadRequestException("La cantidad debe ser mayor que 0");
+    }
+
+    const [stockX, stockY] = await Promise.all([
+      this.getStockActual(dto.variantXId),
+      this.getStockActual(dto.variantYId),
+    ]);
+    if (stockX === null || stockY === null) {
+      throw new BadRequestException(
+        "No se encontró el inventario de alguno de los productos"
+      );
+    }
+    if (cantidad > stockX) {
+      throw new BadRequestException(
+        `Solo hay ${stockX} de ${dto.itemXName ?? "ese producto"} en stock`
+      );
+    }
+
+    await this.actualizarStockLoyverse(dto.variantXId, stockX - cantidad);
+    await this.actualizarStockLoyverse(dto.variantYId, stockY + cantidad);
+
+    return {
+      ok: true,
+      x: { antes: stockX, despues: stockX - cantidad },
+      y: { antes: stockY, despues: stockY + cantidad },
+    };
   }
 
   // Lee el stock actual de una variante en la tienda, paginando el inventario.
