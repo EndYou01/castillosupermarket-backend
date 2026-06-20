@@ -4,6 +4,11 @@ import {
   IInventoryResponse,
   IProductResponse,
 } from "src/interfaces/interfaces";
+import { cached } from "../common/memoryCache";
+
+// Clave de caché del inventario. La invalida CapitalService tras una entrada/
+// baja/transformación (cambian el stock).
+export const INVENTARIO_CACHE_KEY = "inventario";
 
 @Injectable()
 export class ProductosService {
@@ -16,7 +21,13 @@ export class ProductosService {
     this.storeId = this.configService.get<string>("STORE_ID");
   }
 
+  // Inventario combinado (productos + stock), cacheado en memoria 60s para no
+  // pegarle a Loyverse en cada visita/recarga. Se invalida al mutar stock.
   async getInventario() {
+    return cached(INVENTARIO_CACHE_KEY, 60_000, () => this.fetchInventario());
+  }
+
+  private async fetchInventario() {
     try {
       // Obtener productos
       const productsUrl = `${this.BASE_URL}/items?limit=250`;

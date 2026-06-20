@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { DateTime } from "luxon";
 import { IReceipt, IVentasResponse } from "src/interfaces/interfaces";
 import { gastosExtras, estimuloConfig, limpiezaConfig } from "../static/staticData";
+import { cached } from "../common/memoryCache";
 
 @Injectable()
 export class VentasService {
@@ -15,7 +16,20 @@ export class VentasService {
     this.store_id = this.configService.get<string>("STORE_ID");
   }
 
+  // Agregado de ventas de un rango, cacheado en memoria 60s. Para "hoy" implica
+  // hasta 60s de retraso en reflejar ventas nuevas (aceptable); los rangos
+  // pasados son inmutables. Evita re-paginar todos los recibos de Loyverse en
+  // cada carga/recarga del dashboard.
   async obtenerVentasPorRango(
+    desde: string,
+    hasta: string
+  ): Promise<IVentasResponse> {
+    return cached(`ventas:${desde}:${hasta}`, 60_000, () =>
+      this.computeVentasPorRango(desde, hasta)
+    );
+  }
+
+  private async computeVentasPorRango(
     desde: string,
     hasta: string
   ): Promise<IVentasResponse> {

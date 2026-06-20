@@ -9,6 +9,8 @@ import { Between, Repository } from "typeorm";
 import { DateTime } from "luxon";
 import { VentasService } from "../ventas/ventas.service";
 import { Baja, Capital, MovimientoCapital, TipoMovimiento } from "./capital.entities";
+import { invalidateCache } from "../common/memoryCache";
+import { INVENTARIO_CACHE_KEY } from "../productos/productos.service";
 
 export interface DarBajaDto {
   variantId: string;
@@ -526,6 +528,10 @@ export class CapitalService {
       do {
         const qp = new URLSearchParams({
           store_id: this.storeId,
+          // Pedimos SOLO este producto. Si Loyverse respeta el filtro, vuelve en
+          // la primera página (sin recorrer todo el inventario); si lo ignora,
+          // el bucle sigue funcionando igual que antes (sin regresión).
+          variant_ids: variantId,
           limit: "250",
         });
         if (cursor) qp.set("cursor", cursor);
@@ -585,6 +591,10 @@ export class CapitalService {
         body.errors?.[0]?.details || "No se pudo actualizar el stock en Loyverse"
       );
     }
+
+    // El inventario cacheado quedó obsoleto: forzamos que se relea la próxima vez.
+    invalidateCache(INVENTARIO_CACHE_KEY);
+
     return res.json();
   }
 }
