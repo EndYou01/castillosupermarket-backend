@@ -118,7 +118,7 @@ export class PatrimonioService {
   }
 
   // Guarda un registro del patrimonio actual (lo usa el cron y el botón manual).
-  // Si el patrimonio real (USD) bajó respecto al registro anterior, avisa por Telegram.
+  // Si el patrimonio en CUP bajó respecto al registro anterior, avisa por Telegram.
   async guardarSnapshot() {
     const [anterior] = await this.snapshotRepo.find({
       order: { fecha: "DESC" },
