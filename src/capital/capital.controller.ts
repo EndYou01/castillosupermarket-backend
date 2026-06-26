@@ -98,6 +98,12 @@ export class CapitalController {
     return this.capitalService.registrarInyeccion(body.monto, body.descripcion);
   }
 
+  // Registro de gasto: resta dinero del capital disponible.
+  @Post("gasto")
+  async gasto(@Body() body: { monto: number; descripcion?: string }) {
+    return this.capitalService.registrarGasto(body.monto, body.descripcion);
+  }
+
   // Transformación de producto: convierte N de X en N de Y.
   @Post("transformacion")
   async transformacion(@Body() body: TransformarDto) {

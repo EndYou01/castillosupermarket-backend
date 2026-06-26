@@ -14,7 +14,8 @@ export type TipoMovimiento =
   | "COMPRA"
   | "AJUSTE"
   | "EXTRACCION"
-  | "INYECCION";
+  | "INYECCION"
+  | "GASTO";
 
 // Capital disponible: una sola fila (singleton, id = 1) con el monto actual.
 @Entity("capital")

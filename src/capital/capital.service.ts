@@ -290,6 +290,20 @@ export class CapitalService {
     return { monto: saldo, movimiento };
   }
 
+  // POST /capital/gasto → resta dinero del capital disponible.
+  async registrarGasto(monto: number, descripcion?: string) {
+    const m = Number(monto);
+    if (!Number.isFinite(m) || m <= 0) {
+      throw new BadRequestException("El monto debe ser mayor que 0");
+    }
+    const { saldo, movimiento } = await this.aplicarMovimiento(
+      "GASTO",
+      -m,
+      descripcion ?? "Gasto"
+    );
+    return { monto: saldo, movimiento };
+  }
+
   // POST /capital/baja → rebaja stock en Loyverse, registra la baja y suma la
   // parte pagada al capital disponible.
   async darBaja(dto: DarBajaDto) {
