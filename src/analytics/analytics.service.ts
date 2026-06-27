@@ -319,7 +319,14 @@ export class AnalyticsService {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.4, maxOutputTokens: 1024 },
+          generationConfig: {
+            temperature: 0.4,
+            maxOutputTokens: 2048,
+            // gemini-2.5-flash piensa por defecto y ese "pensamiento" consume
+            // el presupuesto de tokens, dejando la respuesta a medias. Lo
+            // desactivamos para que todo el presupuesto sea texto para el dueño.
+            thinkingConfig: { thinkingBudget: 0 },
+          },
         }),
       });
 
@@ -334,8 +341,17 @@ export class AnalyticsService {
       }
 
       const json: any = await response.json();
-      const texto =
-        json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+      const candidato = json?.candidates?.[0];
+      // Une todas las partes de texto (puede venir fragmentado en varias).
+      const texto = (candidato?.content?.parts ?? [])
+        .map((p: any) => p?.text ?? "")
+        .join("")
+        .trim();
+
+      // Si Gemini cortó por límite de tokens, avísalo en vez de mostrar a medias.
+      if (candidato?.finishReason === "MAX_TOKENS" && texto) {
+        return { ok: true, mensaje: texto + "\n\n(Respuesta recortada.)" };
+      }
 
       return {
         ok: !!texto,
