@@ -10,6 +10,7 @@ import { CapitalModule } from './capital/capital.module';
 import { Baja, Capital, MovimientoCapital } from './capital/capital.entities';
 import { PatrimonioModule } from './patrimonio/patrimonio.module';
 import { PatrimonioSnapshot } from './patrimonio/patrimonio.entity';
+import { AnalyticsModule } from './analytics/analytics.module';
 // import { UsersModule } from './users/users.module';
 // import { AuthModule } from './auth/auth.module';
 // import { User } from './users/users.entity';
@@ -31,6 +32,7 @@ import { PatrimonioSnapshot } from './patrimonio/patrimonio.entity';
     CategoriasModule,
     CapitalModule,
     PatrimonioModule,
+    AnalyticsModule,
     // AuthModule,
     // UsersModule,
 
