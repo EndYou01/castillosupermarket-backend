@@ -413,6 +413,8 @@ export class AnalyticsService {
 
     return `Eres el analista de negocio de un supermercado en Cuba (moneda CUP). Habla en español claro y directo, para los dueños. Usa SOLO los datos de abajo, no inventes cifras. Da consejos accionables y concretos para ganar más dinero.
 
+FORMATO DE RESPUESTA (importante): responde en Markdown bien estructurado. Usa encabezados de sección con "## " (por ejemplo "## Comprar ya", "## Revisar precios", "## Promociones", "## Capital parado"). Dentro de cada sección usa listas con viñetas "- " y resalta nombres de productos y cifras clave con **negrita**. No uses líneas de "---" ni asteriscos sueltos. Sé conciso: una frase por viñeta.
+
 PERIODO: ${data.rango.dias} días, ${data.recibosAnalizados} ventas analizadas.
 
 PRODUCTOS POR REPONER (urgentes):
@@ -431,8 +433,8 @@ ${combos || "Sin combos relevantes."}
 
 ${
   pregunta
-    ? `PREGUNTA DEL DUEÑO: ${pregunta}\nResponde la pregunta usando los datos.`
-    : "Da un resumen ejecutivo de máximo 6 puntos: qué comprar ya, qué precios revisar, qué promociones armar y dónde se está perdiendo dinero."
+    ? `PREGUNTA DEL DUEÑO: ${pregunta}\nResponde la pregunta usando los datos, en Markdown estructurado.`
+    : "Da un resumen ejecutivo en secciones con encabezados '## ': qué comprar ya, qué precios revisar, qué promociones armar y dónde se está perdiendo dinero. Máximo 4 viñetas por sección."
 }`;
   }
 
