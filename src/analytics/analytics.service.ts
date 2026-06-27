@@ -9,7 +9,7 @@ import {
   IAsistenteResponse,
   IComboItem,
   IConcentracion,
-  IInventarioInmovilResponse,
+  IInventarioInmovilItem,
   IMargenItem,
   IReposicionItem,
   ITemporal,
@@ -23,8 +23,6 @@ const COBERTURA_OBJETIVO_DIAS = 14;
 const MIN_RECIBOS_COMBO = 3;
 // Margen por debajo del cual marcamos un producto como "bajo margen".
 const UMBRAL_BAJO_MARGEN = 0.1; // 10%
-// Ventana (días) hacia atrás para detectar la "última venta" de cada producto.
-const LOOKBACK_INMOVIL_DIAS = 120;
 // Nombres de los días (índice 1=Lun .. 7=Dom, igual que luxon).
 const NOMBRES_DIA = ["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 
@@ -100,6 +98,8 @@ export class AnalyticsService {
     const porHora = new Map<number, { recibos: number; ingresos: number }>();
     const porDia = new Map<number, { recibos: number; ingresos: number }>();
     const porFecha = new Map<string, { recibos: number; ingresos: number }>();
+    // Última venta por variante dentro del rango (#7, inventario inmóvil).
+    const ultimaVenta = new Map<string, DateTime>();
 
     for (const recibo of recibos) {
       if (recibo.receipt_type !== "SALE") continue; // ignora reembolsos
@@ -139,6 +139,12 @@ export class AnalyticsService {
           acc.ingresos += item.total_money ?? 0;
           acc.costoVendido += (item.cost ?? 0) * qty;
           vendidos.set(variantId, acc);
+
+          // Guarda la fecha de venta más reciente de cada variante.
+          if (fecha.isValid) {
+            const prev = ultimaVenta.get(variantId);
+            if (!prev || fecha > prev) ultimaVenta.set(variantId, fecha);
+          }
         }
 
         // Para combos usamos el producto (item_id) para no duplicar variantes.
@@ -179,6 +185,7 @@ export class AnalyticsService {
       temporal: this.calcularTemporal(porHora, porDia),
       ticket: this.calcularTicket(porFecha, recibosVenta, desde, hasta),
       concentracion: this.calcularConcentracion(margenes.items),
+      inventarioInmovil: this.calcularInventarioInmovil(inv, ultimaVenta, dias),
     };
   }
 
@@ -477,92 +484,63 @@ export class AnalyticsService {
     };
   }
 
-  // ---- #7 Inventario inmóvil / muerto con antigüedad (última venta) ----
-  // Mira una ventana amplia (LOOKBACK_INMOVIL_DIAS) para saber cuándo se vendió
-  // cada producto por última vez. Cacheado 1h porque cambia despacio y es pesado.
-  async getInventarioInmovil(): Promise<IInventarioInmovilResponse> {
-    return cached("analytics:inmovil", 3_600_000, () =>
-      this.computeInventarioInmovil()
-    );
-  }
-
-  private async computeInventarioInmovil(): Promise<IInventarioInmovilResponse> {
+  // ---- #7 Inventario inmóvil / muerto con antigüedad ----
+  // Se calcula con los recibos del rango ya cargado (sin fetch extra, para que
+  // sea viable en serverless). La "última venta" se conoce dentro del rango;
+  // los que no vendieron en él se marcan como "sin ventas en los últimos N días".
+  private calcularInventarioInmovil(
+    inv: Map<
+      string,
+      { itemName: string; costo: number; precio: number; stock: number }
+    >,
+    ultimaVenta: Map<string, DateTime>,
+    dias: number
+  ): IAnaliticaResponse["inventarioInmovil"] {
     const ahora = DateTime.now().setZone("America/Havana");
-    const desde = ahora
-      .minus({ days: LOOKBACK_INMOVIL_DIAS - 1 })
-      .startOf("day")
-      .toUTC()
-      .toISO();
-    const hasta = ahora.endOf("day").toUTC().toISO();
 
-    const [recibos, inventario] = await Promise.all([
-      this.fetchRecibos(desde, hasta),
-      this.productosService.getInventario(),
-    ]);
+    const filas: IInventarioInmovilItem[] = [];
+    for (const [variantId, datos] of inv) {
+      if (datos.stock <= 0) continue;
 
-    // Última venta (fecha más reciente) por variant_id dentro de la ventana.
-    const ultimaVenta = new Map<string, DateTime>();
-    for (const recibo of recibos) {
-      if (recibo.receipt_type !== "SALE") continue;
-      const fecha = DateTime.fromISO(recibo.receipt_date ?? recibo.created_at, {
-        zone: "utc",
-      });
-      for (const item of recibo.line_items ?? []) {
-        if (!item.variant_id) continue;
-        const prev = ultimaVenta.get(item.variant_id);
-        if (!prev || fecha > prev) ultimaVenta.set(item.variant_id, fecha);
-      }
-    }
-
-    // Para cada producto CON stock, calcula días desde su última venta.
-    type Fila = IInventarioInmovilResponse["buckets"][number]["items"][number];
-    const filas: Fila[] = [];
-    for (const p of inventario.productosConInventario ?? []) {
-      if (!p.variant_id) continue;
-      const stock = p.quantity ?? 0;
-      if (stock <= 0) continue;
-      const costo = p.cost ?? 0;
-
-      const ult = ultimaVenta.get(p.variant_id);
+      const ult = ultimaVenta.get(variantId);
       const diasSinVenta = ult
-        ? Math.floor(ahora.diff(ult, "days").days)
+        ? Math.max(0, Math.floor(ahora.diff(ult, "days").days))
         : null;
 
-      // Solo nos interesa lo realmente inmóvil: nunca vendió, o lleva ≥30 días.
-      if (diasSinVenta !== null && diasSinVenta < 30) continue;
+      // Solo lo realmente inmóvil: sin ventas en el rango, o ≥14 días parado.
+      if (diasSinVenta !== null && diasSinVenta < 14) continue;
 
       filas.push({
-        variantId: p.variant_id,
-        itemName: p.item_name,
-        stock,
-        costo,
-        capitalInmovilizado: Math.round(costo * stock),
+        variantId,
+        itemName: datos.itemName,
+        stock: datos.stock,
+        costo: datos.costo,
+        capitalInmovilizado: Math.round(datos.costo * datos.stock),
         diasSinVenta,
         ultimaVenta: ult ? ult.toISODate() : null,
       });
     }
 
-    // Reparte en cubos por antigüedad (mayor antigüedad = más urgente liquidar).
-    const def = [
+    // Cubos por antigüedad (lo más muerto primero). Se filtran los vacíos, así
+    // que en rangos cortos (7 días) solo aparece el primer cubo.
+    const def: { etiqueta: string; test: (d: number | null) => boolean }[] = [
       {
-        etiqueta: `Sin ventas en ${LOOKBACK_INMOVIL_DIAS}+ días (o nunca)`,
-        test: (d: number | null) => d === null,
+        etiqueta: `Sin ventas en los últimos ${dias} días`,
+        test: (d) => d === null,
       },
-      { etiqueta: "60 a 90 días sin vender", test: (d: number | null) => d !== null && d >= 60 && d < 90 },
-      { etiqueta: "90 a 120 días sin vender", test: (d: number | null) => d !== null && d >= 90 },
-      { etiqueta: "30 a 60 días sin vender", test: (d: number | null) => d !== null && d >= 30 && d < 60 },
-    ];
-    // Orden de presentación: lo más muerto primero.
-    const orden = [
-      `Sin ventas en ${LOOKBACK_INMOVIL_DIAS}+ días (o nunca)`,
-      "90 a 120 días sin vender",
-      "60 a 90 días sin vender",
-      "30 a 60 días sin vender",
+      { etiqueta: "60+ días sin vender", test: (d) => d !== null && d >= 60 },
+      {
+        etiqueta: "30 a 60 días sin vender",
+        test: (d) => d !== null && d >= 30 && d < 60,
+      },
+      {
+        etiqueta: "14 a 30 días sin vender",
+        test: (d) => d !== null && d >= 14 && d < 30,
+      },
     ];
 
-    const buckets = orden
-      .map((etiqueta) => {
-        const test = def.find((d) => d.etiqueta === etiqueta)!.test;
+    const buckets = def
+      .map(({ etiqueta, test }) => {
         const items = filas
           .filter((f) => test(f.diasSinVenta))
           .sort((a, b) => b.capitalInmovilizado - a.capitalInmovilizado)
@@ -576,7 +554,7 @@ export class AnalyticsService {
       .filter((b) => b.items.length > 0);
 
     const totalCapital = filas.reduce((s, f) => s + f.capitalInmovilizado, 0);
-    return { lookbackDias: LOOKBACK_INMOVIL_DIAS, buckets, totalCapital };
+    return { buckets, totalCapital };
   }
 
   // ---- Asistente IA (Gemini, capa gratuita). Explica los números en español. ----

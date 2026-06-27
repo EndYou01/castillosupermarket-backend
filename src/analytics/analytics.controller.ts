@@ -3,7 +3,6 @@ import { AnalyticsService } from "./analytics.service";
 import {
   IAnaliticaResponse,
   IAsistenteResponse,
-  IInventarioInmovilResponse,
 } from "./analytics.interfaces";
 
 @Controller("analytics")
@@ -29,11 +28,5 @@ export class AnalyticsController {
       body.hasta,
       body.pregunta
     );
-  }
-
-  // Inventario inmóvil / muerto con antigüedad (mira ~120 días hacia atrás).
-  @Get("inventario-inmovil")
-  async inventarioInmovil(): Promise<IInventarioInmovilResponse> {
-    return this.analyticsService.getInventarioInmovil();
   }
 }

@@ -118,26 +118,25 @@ export interface IAnaliticaResponse {
   temporal: ITemporal;
   ticket: ITicketAnalisis;
   concentracion: IConcentracion;
+  inventarioInmovil: {
+    buckets: {
+      etiqueta: string;
+      items: IInventarioInmovilItem[];
+      totalCapital: number;
+    }[];
+    totalCapital: number;
+  };
 }
 
-// ---- #7 Inventario inmóvil / muerto con antigüedad (endpoint aparte) ----
+// ---- #7 Inventario inmóvil / muerto con antigüedad ----
 export interface IInventarioInmovilItem {
   variantId: string;
   itemName: string;
   stock: number;
   costo: number;
   capitalInmovilizado: number; // costo * stock
-  diasSinVenta: number | null; // null = no vendió en toda la ventana de búsqueda
+  diasSinVenta: number | null; // null = no vendió dentro del rango analizado
   ultimaVenta: string | null; // fecha ISO de la última venta, o null
-}
-export interface IInventarioInmovilResponse {
-  lookbackDias: number;
-  buckets: {
-    etiqueta: string;
-    items: IInventarioInmovilItem[];
-    totalCapital: number;
-  }[];
-  totalCapital: number;
 }
 
 export interface IAsistenteResponse {
