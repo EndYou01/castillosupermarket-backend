@@ -43,8 +43,6 @@ async function fetchAll() {
 }
 
 const receipts = await fetchAll();
-console.log(`\nRango: ${diaHavana(desdeISO)} → ${diaHavana(hastaISO)}`);
-console.log(`Recibos totales: ${receipts.length}\n`);
 
 // Agregados por dia
 const dias = new Map();
@@ -84,8 +82,6 @@ for (const rec of receipts) {
 }
 
 // Tabla por dia
-console.log('=== POR DÍA (zona Havana) ===');
-console.log('fecha       ventaNeta   costo   benefBruto  margen%  recibos refunds');
 const fechasOrden = [...dias.keys()].sort();
 let accV = 0, accB = 0;
 for (const f of fechasOrden) {
@@ -94,39 +90,21 @@ for (const f of fechasOrden) {
   const bruto = vneta - d.costo;
   const m = vneta ? (bruto / vneta * 100) : 0;
   accV += vneta; accB += bruto;
-  console.log(
-    `${f}  ${String(Math.round(vneta)).padStart(9)} ${String(Math.round(d.costo)).padStart(7)} ${String(Math.round(bruto)).padStart(10)} ${m.toFixed(1).padStart(7)} ${String(d.recibos).padStart(7)} ${String(d.refunds).padStart(7)}`
-  );
 }
-console.log('-----');
-console.log(`TOTAL venta neta: ${Math.round(accV)} | beneficio bruto: ${Math.round(accB)} | margen global: ${(accB/accV*100).toFixed(2)}%`);
 
-console.log('\n=== MÉTODOS DE PAGO (neto 34 días) ===');
 let totalMet = 0;
 for (const [n, v] of [...metodos.entries()].sort((a,b)=>b[1]-a[1])) {
   totalMet += v;
   const desc = n === 'Tarjeta Fiscal' ? `  (6% = -${Math.round(v*0.06)})` : '';
-  console.log(`${n.padEnd(20)} ${String(Math.round(v)).padStart(10)}${desc}`);
 }
-console.log(`TOTAL métodos: ${Math.round(totalMet)}  (debe = venta neta ${Math.round(accV)})`);
 
 const fiscal = metodos.get('Tarjeta Fiscal') ?? 0;
-console.log(`\n>> Pérdida por 6% Tarjeta Fiscal (34d): ${Math.round(fiscal*0.06)} cup`);
 
 // Costos sospechosos
-console.log('\n=== PRODUCTOS CON COSTO 0 (vendidos) ===');
 const cero = [...itemsVistos.entries()].filter(([,v]) => v.cost === 0).sort((a,b)=>b[1].qty-a[1].qty);
-if (!cero.length) console.log('(ninguno)');
-for (const [n, v] of cero.slice(0, 25)) console.log(`${n.padEnd(35)} precio:${v.price} qty:${v.qty}`);
 
-console.log('\n=== MÁRGENES SOSPECHOSOS (margen <=0 o > precio*0.9) ===');
 const susp = [...itemsVistos.entries()].filter(([,v]) => v.cost>0 && (v.margen<=0 || v.margen > v.price*0.9)).sort((a,b)=>a[1].margen-b[1].margen);
-for (const [n, v] of susp.slice(0, 30)) console.log(`${n.padEnd(35)} cost:${v.cost} precio:${v.price} margen:${v.margen} qty:${v.qty}`);
 
-console.log('\n=== VENTAS CON NOTA (posible "libreta") ===');
-if (!ventasConNota.length) console.log('(ninguna)');
-for (const v of ventasConNota.slice(0,40)) console.log(`${v.dia}  ${String(v.total).padStart(6)}  "${v.nota}"`);
-console.log(`Total ventas con nota: ${ventasConNota.length}`);
 
 // ===== Análisis extra =====
 let totalDescuentos = 0, totalReembAmount = 0;
@@ -141,20 +119,12 @@ for (const rec of receipts) {
   else if (factor === -1) { e.refundAmount += total; e.refundCount++; totalReembAmount += total; reembDetalle.push({ dia: diaHavana(rec.created_at), total, items: (rec.line_items||[]).map(i=>i.item_name).join(', ') }); }
   porEmpleado.set(rec.employee_id, e);
 }
-console.log('\n=== DESCUENTOS Y REEMBOLSOS (30d) ===');
-console.log(`Total descuentos aplicados: ${Math.round(totalDescuentos)} cup`);
-console.log(`Total reembolsos (devoluciones): ${Math.round(totalReembAmount)} cup  (${reembDetalle.length} recibos)`);
 
-console.log('\n=== POR EMPLEADO ===');
 for (const [id, e] of [...porEmpleado.entries()].sort((a,b)=>b[1].venta-a[1].venta)) {
-  console.log(`emp ${String(id).slice(0,8)}  venta:${String(Math.round(e.venta)).padStart(9)}  recibos:${String(e.recibos).padStart(4)}  reembolsos:${String(Math.round(e.refundAmount)).padStart(7)} (${e.refundCount})`);
 }
 
-console.log('\n=== REEMBOLSOS MAYORES ===');
-for (const r of reembDetalle.sort((a,b)=>b.total-a.total).slice(0,15)) console.log(`${r.dia}  ${String(r.total).padStart(6)}  ${r.items.slice(0,50)}`);
 
 // ===== Modelo de reparto real (con estímulo y Mary) =====
-console.log('\n=== MODELO DE REPARTO (paper, 30 días completos) ===');
 const dow = new Intl.DateTimeFormat('en-US', { timeZone: ZONE, weekday: 'short' });
 let tReinv=0, tJefes=0, tSal=0, tImp=0, tEst=0, tMary=0;
 const SAL=2000, IMP=2000;
@@ -172,6 +142,3 @@ fechasFull.forEach((f, idx) => {
   if (sinReinv >= 1500) { tReinv += reinvTarget; tEst+=0; tJefes += sinReinv - 1500; }
   else { tReinv += Math.max(0, sinReinv - estimulo - mary); }
 });
-console.log(`Salarios: ${tSal} | Impuestos: ${tImp} | Estímulo trabajadores: ${tEst} | Limpieza (Mary): ${tMary}`);
-console.log(`Reinversión: ${Math.round(tReinv)} | GANANCIA NETA JEFES: ${Math.round(tJefes)} (c/u ${Math.round(tJefes*0.25)})`);
-console.log(`\n>> Beneficio bruto 30d: ${Math.round(accB - (dias.get(diaHavana(hastaISO))?.venta - dias.get(diaHavana(hastaISO))?.reemb - dias.get(diaHavana(hastaISO))?.costo || 0))}`);
