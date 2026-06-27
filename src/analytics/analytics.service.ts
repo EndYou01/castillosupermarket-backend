@@ -8,8 +8,13 @@ import {
   IAnaliticaResponse,
   IAsistenteResponse,
   IComboItem,
+  IConcentracion,
+  IInventarioInmovilResponse,
   IMargenItem,
   IReposicionItem,
+  ITemporal,
+  ITicketAnalisis,
+  IVentaPerdidaItem,
 } from "./analytics.interfaces";
 
 // Días de stock que queremos tener cubiertos al sugerir una compra.
@@ -18,6 +23,10 @@ const COBERTURA_OBJETIVO_DIAS = 14;
 const MIN_RECIBOS_COMBO = 3;
 // Margen por debajo del cual marcamos un producto como "bajo margen".
 const UMBRAL_BAJO_MARGEN = 0.1; // 10%
+// Ventana (días) hacia atrás para detectar la "última venta" de cada producto.
+const LOOKBACK_INMOVIL_DIAS = 120;
+// Nombres de los días (índice 1=Lun .. 7=Dom, igual que luxon).
+const NOMBRES_DIA = ["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 
 @Injectable()
 export class AnalyticsService {
@@ -87,9 +96,34 @@ export class AnalyticsService {
     const nombrePorItem = new Map<string, string>();
     let recibosVenta = 0;
 
+    // Acumuladores temporales (#2) y de ticket (#4).
+    const porHora = new Map<number, { recibos: number; ingresos: number }>();
+    const porDia = new Map<number, { recibos: number; ingresos: number }>();
+    const porFecha = new Map<string, { recibos: number; ingresos: number }>();
+
     for (const recibo of recibos) {
       if (recibo.receipt_type !== "SALE") continue; // ignora reembolsos
       recibosVenta++;
+
+      // Reparte el recibo en sus cubos de hora / día de semana / fecha.
+      const total = recibo.total_money ?? 0;
+      const fecha = DateTime.fromISO(recibo.receipt_date ?? recibo.created_at, {
+        zone: "utc",
+      }).setZone("America/Havana");
+      if (fecha.isValid) {
+        const h = porHora.get(fecha.hour) ?? { recibos: 0, ingresos: 0 };
+        h.recibos++; h.ingresos += total;
+        porHora.set(fecha.hour, h);
+
+        const d = porDia.get(fecha.weekday) ?? { recibos: 0, ingresos: 0 };
+        d.recibos++; d.ingresos += total;
+        porDia.set(fecha.weekday, d);
+
+        const clave = fecha.toFormat("yyyy-LL-dd");
+        const f = porFecha.get(clave) ?? { recibos: 0, ingresos: 0 };
+        f.recibos++; f.ingresos += total;
+        porFecha.set(clave, f);
+      }
 
       const lineItems = recibo.line_items ?? [];
       const itemsDelRecibo = new Set<string>(); // item_id distintos del recibo
@@ -126,25 +160,35 @@ export class AnalyticsService {
       }
     }
 
+    const reposicion = this.calcularReposicion(vendidos, inv, dias);
+    const margenes = this.calcularMargenes(vendidos, inv);
+
     return {
       rango: { desde, hasta, dias },
       recibosAnalizados: recibosVenta,
       coberturaObjetivoDias: COBERTURA_OBJETIVO_DIAS,
-      reposicion: this.calcularReposicion(vendidos, inv, dias),
-      margenes: this.calcularMargenes(vendidos, inv),
+      reposicion,
+      ventaPerdida: this.calcularVentaPerdida(reposicion),
+      margenes,
       combos: this.calcularCombos(
         frecItem,
         frecPar,
         nombrePorItem,
         recibosVenta
       ),
+      temporal: this.calcularTemporal(porHora, porDia),
+      ticket: this.calcularTicket(porFecha, recibosVenta, desde, hasta),
+      concentracion: this.calcularConcentracion(margenes.items),
     };
   }
 
   // ---- 1) Reposición / predicción de quiebre de stock ----
   private calcularReposicion(
     vendidos: Map<string, { itemName: string; unidades: number }>,
-    inv: Map<string, { itemName: string; costo: number; stock: number }>,
+    inv: Map<
+      string,
+      { itemName: string; costo: number; precio: number; stock: number }
+    >,
     dias: number
   ): IReposicionItem[] {
     const out: IReposicionItem[] = [];
@@ -154,6 +198,7 @@ export class AnalyticsService {
       const datos = inv.get(variantId);
       const stock = datos?.stock ?? 0;
       const costo = datos?.costo ?? 0;
+      const precio = datos?.precio ?? 0;
       const velocidadDia = v.unidades / dias;
       const diasParaAgotar =
         velocidadDia > 0 ? stock / velocidadDia : null;
@@ -161,6 +206,7 @@ export class AnalyticsService {
         0,
         Math.ceil(velocidadDia * COBERTURA_OBJETIVO_DIAS - stock)
       );
+      const agotado = stock <= 0;
 
       out.push({
         variantId,
@@ -174,7 +220,10 @@ export class AnalyticsService {
             : Math.round(diasParaAgotar * 10) / 10,
         sugerenciaCompra,
         costo,
-        agotado: stock <= 0,
+        precio,
+        agotado,
+        // Solo perdemos venta si está agotado y aún hay demanda (velocidad > 0).
+        ventaPerdidaDia: agotado ? Math.round(velocidadDia * precio) : 0,
       });
     }
 
@@ -207,16 +256,25 @@ export class AnalyticsService {
       const precio = datos?.precio ?? (v.ingresos / v.unidades || 0);
       const margenPct = precio > 0 ? (precio - costo) / precio : 0;
       const ganancia = v.ingresos - v.costoVendido;
+      const stock = datos?.stock ?? 0;
+      // GMROI: ganancia del rango por cada CUP invertido en el stock actual.
+      const capitalEnStock = costo * stock;
+      const gmroi =
+        capitalEnStock > 0
+          ? Math.round((ganancia / capitalEnStock) * 100) / 100
+          : null;
 
       items.push({
         variantId,
         itemName: datos?.itemName ?? v.itemName,
         costo,
         precio,
+        stock,
         margenPct: Math.round(margenPct * 1000) / 1000,
         unidadesVendidas: Math.round(v.unidades * 100) / 100,
         ingresos: Math.round(v.ingresos),
         ganancia: Math.round(ganancia),
+        gmroi,
         claseABC: "-",
         bajoMargen: precio <= costo || margenPct < UMBRAL_BAJO_MARGEN,
       });
@@ -293,6 +351,232 @@ export class AnalyticsService {
     // Mejores relaciones primero (lift), desempate por frecuencia.
     combos.sort((x, y) => y.lift - x.lift || y.veces - x.veces);
     return combos.slice(0, 25);
+  }
+
+  // ---- #1 Venta perdida por agotados (CUP/día y proyección mensual) ----
+  private calcularVentaPerdida(reposicion: IReposicionItem[]) {
+    const items: IVentaPerdidaItem[] = reposicion
+      .filter((r) => r.agotado && r.ventaPerdidaDia > 0)
+      .map((r) => ({
+        variantId: r.variantId,
+        itemName: r.itemName,
+        velocidadDia: r.velocidadDia,
+        precio: r.precio,
+        perdidaDia: r.ventaPerdidaDia,
+      }))
+      .sort((a, b) => b.perdidaDia - a.perdidaDia);
+
+    const totalDia = items.reduce((s, i) => s + i.perdidaDia, 0);
+    return {
+      totalDia,
+      totalMes: Math.round(totalDia * 30),
+      items: items.slice(0, 50),
+    };
+  }
+
+  // ---- #2 Patrones temporales: horas y días pico ----
+  private calcularTemporal(
+    porHora: Map<number, { recibos: number; ingresos: number }>,
+    porDia: Map<number, { recibos: number; ingresos: number }>
+  ): ITemporal {
+    const horas = Array.from({ length: 24 }, (_, hora) => {
+      const d = porHora.get(hora);
+      return {
+        hora,
+        recibos: d?.recibos ?? 0,
+        ingresos: Math.round(d?.ingresos ?? 0),
+      };
+    });
+    const dias = Array.from({ length: 7 }, (_, i) => {
+      const dia = i + 1; // 1=Lun .. 7=Dom
+      const d = porDia.get(dia);
+      return {
+        dia,
+        nombre: NOMBRES_DIA[dia],
+        recibos: d?.recibos ?? 0,
+        ingresos: Math.round(d?.ingresos ?? 0),
+      };
+    });
+
+    const horaPico = horas.reduce((a, b) => (b.ingresos > a.ingresos ? b : a), horas[0]).hora;
+    const diaPico = dias.reduce((a, b) => (b.ingresos > a.ingresos ? b : a), dias[0]).nombre;
+
+    return { porHora: horas, porDia: dias, horaPico, diaPico };
+  }
+
+  // ---- #4 Ticket promedio y su evolución diaria ----
+  private calcularTicket(
+    porFecha: Map<string, { recibos: number; ingresos: number }>,
+    recibosVenta: number,
+    desde: string,
+    hasta: string
+  ): ITicketAnalisis {
+    // Serie diaria completa (incluye días sin ventas como 0 para no engañar).
+    const ini = DateTime.fromISO(desde, { zone: "utc" }).setZone("America/Havana").startOf("day");
+    const fin = DateTime.fromISO(hasta, { zone: "utc" }).setZone("America/Havana").startOf("day");
+    const serie: ITicketAnalisis["serie"] = [];
+    let totalIngresos = 0;
+
+    for (let d = ini; d <= fin; d = d.plus({ days: 1 })) {
+      const clave = d.toFormat("yyyy-LL-dd");
+      const v = porFecha.get(clave);
+      const recibos = v?.recibos ?? 0;
+      const ingresos = Math.round(v?.ingresos ?? 0);
+      totalIngresos += ingresos;
+      serie.push({
+        fecha: clave,
+        recibos,
+        ingresos,
+        ticket: recibos > 0 ? Math.round(ingresos / recibos) : 0,
+      });
+    }
+
+    const promedio = recibosVenta > 0 ? Math.round(totalIngresos / recibosVenta) : 0;
+
+    // Tendencia: ticket promedio de la 2ª mitad del rango vs. la 1ª mitad.
+    const mitad = Math.floor(serie.length / 2);
+    const ticketMitad = (arr: typeof serie) => {
+      const r = arr.reduce((s, x) => s + x.recibos, 0);
+      const ing = arr.reduce((s, x) => s + x.ingresos, 0);
+      return r > 0 ? ing / r : 0;
+    };
+    const t1 = ticketMitad(serie.slice(0, mitad));
+    const t2 = ticketMitad(serie.slice(mitad));
+    const tendenciaPct = t1 > 0 ? Math.round(((t2 - t1) / t1) * 100) : 0;
+
+    return { promedio, serie, tendenciaPct };
+  }
+
+  // ---- #9 Concentración de ventas (Pareto) ----
+  private calcularConcentracion(items: IMargenItem[]): IConcentracion {
+    const ordenados = [...items].sort((a, b) => b.ingresos - a.ingresos);
+    const total = ordenados.reduce((s, i) => s + i.ingresos, 0);
+    const n = ordenados.length;
+
+    const pctAcumulado = (hasta: number) => {
+      if (total <= 0) return 0;
+      const suma = ordenados.slice(0, hasta).reduce((s, i) => s + i.ingresos, 0);
+      return Math.round((suma / total) * 100);
+    };
+
+    // Cuántos productos hacen falta para llegar al 80% de los ingresos.
+    let acumulado = 0;
+    let productosPara80pct = 0;
+    for (const item of ordenados) {
+      if (total > 0 && acumulado / total >= 0.8) break;
+      acumulado += item.ingresos;
+      productosPara80pct++;
+    }
+
+    return {
+      totalProductosVendidos: n,
+      productosPara80pct,
+      pctTop5: pctAcumulado(5),
+      pctTop10: pctAcumulado(10),
+      pctTop20: pctAcumulado(20),
+    };
+  }
+
+  // ---- #7 Inventario inmóvil / muerto con antigüedad (última venta) ----
+  // Mira una ventana amplia (LOOKBACK_INMOVIL_DIAS) para saber cuándo se vendió
+  // cada producto por última vez. Cacheado 1h porque cambia despacio y es pesado.
+  async getInventarioInmovil(): Promise<IInventarioInmovilResponse> {
+    return cached("analytics:inmovil", 3_600_000, () =>
+      this.computeInventarioInmovil()
+    );
+  }
+
+  private async computeInventarioInmovil(): Promise<IInventarioInmovilResponse> {
+    const ahora = DateTime.now().setZone("America/Havana");
+    const desde = ahora
+      .minus({ days: LOOKBACK_INMOVIL_DIAS - 1 })
+      .startOf("day")
+      .toUTC()
+      .toISO();
+    const hasta = ahora.endOf("day").toUTC().toISO();
+
+    const [recibos, inventario] = await Promise.all([
+      this.fetchRecibos(desde, hasta),
+      this.productosService.getInventario(),
+    ]);
+
+    // Última venta (fecha más reciente) por variant_id dentro de la ventana.
+    const ultimaVenta = new Map<string, DateTime>();
+    for (const recibo of recibos) {
+      if (recibo.receipt_type !== "SALE") continue;
+      const fecha = DateTime.fromISO(recibo.receipt_date ?? recibo.created_at, {
+        zone: "utc",
+      });
+      for (const item of recibo.line_items ?? []) {
+        if (!item.variant_id) continue;
+        const prev = ultimaVenta.get(item.variant_id);
+        if (!prev || fecha > prev) ultimaVenta.set(item.variant_id, fecha);
+      }
+    }
+
+    // Para cada producto CON stock, calcula días desde su última venta.
+    type Fila = IInventarioInmovilResponse["buckets"][number]["items"][number];
+    const filas: Fila[] = [];
+    for (const p of inventario.productosConInventario ?? []) {
+      if (!p.variant_id) continue;
+      const stock = p.quantity ?? 0;
+      if (stock <= 0) continue;
+      const costo = p.cost ?? 0;
+
+      const ult = ultimaVenta.get(p.variant_id);
+      const diasSinVenta = ult
+        ? Math.floor(ahora.diff(ult, "days").days)
+        : null;
+
+      // Solo nos interesa lo realmente inmóvil: nunca vendió, o lleva ≥30 días.
+      if (diasSinVenta !== null && diasSinVenta < 30) continue;
+
+      filas.push({
+        variantId: p.variant_id,
+        itemName: p.item_name,
+        stock,
+        costo,
+        capitalInmovilizado: Math.round(costo * stock),
+        diasSinVenta,
+        ultimaVenta: ult ? ult.toISODate() : null,
+      });
+    }
+
+    // Reparte en cubos por antigüedad (mayor antigüedad = más urgente liquidar).
+    const def = [
+      {
+        etiqueta: `Sin ventas en ${LOOKBACK_INMOVIL_DIAS}+ días (o nunca)`,
+        test: (d: number | null) => d === null,
+      },
+      { etiqueta: "60 a 90 días sin vender", test: (d: number | null) => d !== null && d >= 60 && d < 90 },
+      { etiqueta: "90 a 120 días sin vender", test: (d: number | null) => d !== null && d >= 90 },
+      { etiqueta: "30 a 60 días sin vender", test: (d: number | null) => d !== null && d >= 30 && d < 60 },
+    ];
+    // Orden de presentación: lo más muerto primero.
+    const orden = [
+      `Sin ventas en ${LOOKBACK_INMOVIL_DIAS}+ días (o nunca)`,
+      "90 a 120 días sin vender",
+      "60 a 90 días sin vender",
+      "30 a 60 días sin vender",
+    ];
+
+    const buckets = orden
+      .map((etiqueta) => {
+        const test = def.find((d) => d.etiqueta === etiqueta)!.test;
+        const items = filas
+          .filter((f) => test(f.diasSinVenta))
+          .sort((a, b) => b.capitalInmovilizado - a.capitalInmovilizado)
+          .slice(0, 50);
+        const totalCapital = items.reduce(
+          (s, i) => s + i.capitalInmovilizado,
+          0
+        );
+        return { etiqueta, items, totalCapital };
+      })
+      .filter((b) => b.items.length > 0);
+
+    const totalCapital = filas.reduce((s, f) => s + f.capitalInmovilizado, 0);
+    return { lookbackDias: LOOKBACK_INMOVIL_DIAS, buckets, totalCapital };
   }
 
   // ---- Asistente IA (Gemini, capa gratuita). Explica los números en español. ----
@@ -427,6 +711,12 @@ PRODUCTOS DE BAJO MARGEN (revisar precio):
 ${bajoMargen || "Ninguno."}
 
 CAPITAL PARADO (stock que no se vende): ${data.margenes.totalCapitalParado} cup inmovilizados.
+
+VENTA PERDIDA POR AGOTADOS: ~${data.ventaPerdida.totalDia} cup/día (≈${data.ventaPerdida.totalMes} cup/mes) que se dejan de ganar por productos agotados con demanda.
+
+CUÁNDO SE VENDE MÁS: hora pico ${data.temporal.horaPico}:00, día pico ${data.temporal.diaPico}.
+
+CONCENTRACIÓN: ${data.concentracion.productosPara80pct} productos hacen el 80% de los ingresos (top 10 = ${data.concentracion.pctTop10}%).
 
 COMBOS (productos que se compran juntos → ideas de promoción):
 ${combos || "Sin combos relevantes."}
