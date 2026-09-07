@@ -180,7 +180,7 @@ export class VentasService {
       // Lógica de distribución (calculada día por día)
       const calcularDistribucion = () => {
         const salarioDia = 2000;
-        const reinversionDiaria = 4000;
+        const reinversionDiaria = 2700;
 
         // Calcular días del rango usando Luxon consistentemente
         const fechaInicio = DateTime.fromISO(desde, {
@@ -225,8 +225,8 @@ export class VentasService {
           totalGastosExtras += gastoDia;
 
           // Estímulo (200, patrón "2 días sí / 2 días no") y limpieza/Mary (1000 los
-          // domingos). Ambos se rebajan de la reinversión base de 4000, así que la
-          // reinversión real del día puede ser 4000 / 3800 / 3000 / 2800.
+          // domingos). Ambos se rebajan de la reinversión base de 2700, así que la
+          // reinversión real del día puede ser 2700 / 2500 / 1700 / 1500.
           const fecha = DateTime.fromISO(dia, { zone: "America/Havana" });
           const diasDesdeAnchor = Math.floor(
             fecha.diff(anchorEstimulo, "days").days
@@ -242,7 +242,7 @@ export class VentasService {
           const gananciaSinReinversion =
             beneficioDia - pagoTrabajadoresDia - impuestosDia - gastoDia;
 
-          // La reinversión base (4000) se reserva antes de que cobren los jefes;
+          // La reinversión base (2700) se reserva antes de que cobren los jefes;
           // de ella salen el estímulo y la limpieza. Si el día no cubre la base,
           // los jefes ganan 0 y la reinversión absorbe la diferencia.
           if (gananciaSinReinversion >= reinversionDiaria) {
