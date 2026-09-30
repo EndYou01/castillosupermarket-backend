@@ -180,7 +180,7 @@ export class VentasService {
       // Lógica de distribución (calculada día por día)
       const calcularDistribucion = () => {
         const salarioDia = 2000;
-        const reinversionDiaria = 2700;
+        const reinversionDiaria = 2000;
 
         // Calcular días del rango usando Luxon consistentemente
         const fechaInicio = DateTime.fromISO(desde, {
