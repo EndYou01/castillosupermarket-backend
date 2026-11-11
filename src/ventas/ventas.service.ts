@@ -254,7 +254,7 @@ export class VentasService {
         }
 
         const gananciaNeta = totalJefes;
-        const parteCadaJefe = totalJefes * 0.25;
+        const parteCadaJefe = Math.round(totalJefes / 3);
 
         return {
           diasProcesados,
@@ -268,7 +268,6 @@ export class VentasService {
           jefes: {
             total: totalJefes,
             alfonso: parteCadaJefe,
-            senjudo: parteCadaJefe,
             josse: parteCadaJefe,
             julio: parteCadaJefe,
           },

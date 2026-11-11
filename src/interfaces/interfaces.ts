@@ -18,7 +18,6 @@ export interface IVentasResponse {
     jefes: {
       total: number;
       alfonso: number;
-      senjudo: number;
       josse: number;
       julio: number;
     };
